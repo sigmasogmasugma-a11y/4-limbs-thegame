@@ -5324,6 +5324,7 @@ MonoBehaviour:
   Cam: {fileID: 330585549}
   Observer: {fileID: 1162652627}
   OrbitSpeed: 90
+  Draw: 1
 --- !u!114 &330585549
 MonoBehaviour:
   m_ObjectHideFlags: 0

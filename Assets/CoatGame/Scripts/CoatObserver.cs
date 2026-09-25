@@ -33,6 +33,24 @@ namespace Coat
         public float TellStrength { get; private set; }
         public bool Rumbled { get; private set; }
 
+        /// Whether this HAS EVER rumbled since the last ClearSuspicion(), as
+        /// opposed to whether it is rumbled RIGHT NOW.
+        ///
+        /// Rumbled self-clears after ResetAfter seconds by design, so the
+        /// observer can start doubting you again rather than staying tripped
+        /// forever. A round result must not read Rumbled directly for exactly
+        /// that reason -- gate the round on the live flag and getting caught,
+        /// then simply outlasting the clock, reads as a clean getaway. This is
+        /// the separate, non-clearing signal a round outcome should read.
+        public bool EverRumbled { get; private set; }
+
+        /// The worst it got, even on a run that stayed clean. Two runs that
+        /// both got away are not the same run: one the observer never looked
+        /// twice at, the other got to 0.97 and cooled off in the last second.
+        /// A payout that cannot tell them apart is not measuring the thing the
+        /// player was actually doing.
+        public float PeakSuspicion { get; private set; }
+
         static readonly Color Calm = new Color(0.36f, 0.62f, 0.38f);
         static readonly Color Doubt = new Color(0.90f, 0.70f, 0.22f);
         static readonly Color Certain = new Color(0.85f, 0.22f, 0.20f);
@@ -71,12 +89,18 @@ namespace Coat
                     : -FallRate;
 
                 Suspicion = Mathf.Clamp01(Suspicion + delta * dt);
-                if (Suspicion >= 1f) Rumbled = true;
+                if (Suspicion >= 1f) { Rumbled = true; EverRumbled = true; }
             }
+
+            PeakSuspicion = Mathf.Max(PeakSuspicion, Suspicion);
 
             Paint();
         }
 
+        /// Resets the live suspicion state AND the round-long history
+        /// (EverRumbled, PeakSuspicion). The two used to only cover the live
+        /// state; a round restarted after a bust carried the bust into the
+        /// next attempt, since nothing had ever cleared it.
         public void ClearSuspicion()
         {
             Suspicion = 0f;
@@ -84,6 +108,8 @@ namespace Coat
             _rumbledFor = 0f;
             Tell = "-";
             TellStrength = 0f;
+            EverRumbled = false;
+            PeakSuspicion = 0f;
         }
 
         // ---- the tells ----------------------------------------------------------

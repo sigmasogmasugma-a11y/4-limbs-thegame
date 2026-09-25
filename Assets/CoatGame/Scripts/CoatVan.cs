@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Coat.Classic;
 
 namespace Coat
 {
@@ -23,6 +24,44 @@ namespace Coat
         public CoatGame Game;
         public CoatVehicle Vehicle;
         public TheCoat Coat;
+        /// The two observers, read straight off the vehicle that swaps them.
+        ///
+        /// There are two on purpose: CoatVehicle switches WornObserver (a
+        /// ClassicObserver, watching the disguise) on while the coat is worn,
+        /// and LooseObserver (a CoatObserver, watching the crew on their own
+        /// legs) on while it is not or anyone has climbed out. A round has to
+        /// read BOTH. Reading only the loose one -- which is what edit mode
+        /// makes look like the live one, because the coat is off there --
+        /// means getting made while in disguise, the actual heist, never
+        /// counts. Taken from the vehicle rather than wired here a second time
+        /// so the two can never drift apart.
+        CoatObserver LooseObs =>
+            Vehicle != null && Vehicle.LooseObserver != null
+                ? Vehicle.LooseObserver.GetComponent<CoatObserver>() : null;
+
+        ClassicObserver WornObs =>
+            Vehicle != null && Vehicle.WornObserver != null
+                ? Vehicle.WornObserver.GetComponent<ClassicObserver>() : null;
+
+        /// Either observer ever making them counts. Reads the component even
+        /// while its object is switched off -- the history survives that.
+        bool EverRumbled
+        {
+            get
+            {
+                var l = LooseObs; var w = WornObs;
+                return (l != null && l.EverRumbled) || (w != null && w.EverRumbled);
+            }
+        }
+
+        float PeakSuspicion
+        {
+            get
+            {
+                var l = LooseObs; var w = WornObs;
+                return Mathf.Max(l != null ? l.PeakSuspicion : 0f, w != null ? w.PeakSuspicion : 0f);
+            }
+        }
         [Tooltip("What has to come home with them. Leave it empty and the round is " +
                  "just a there-and-back.")]
         public CoatLoot Loot;
@@ -64,6 +103,10 @@ namespace Coat
         /// Whether they have got clear of the van at all this round. Coming back
         /// only counts once you have been away.
         public bool HasLeft => _left;
+
+        /// Set the instant the round closes (Now becomes Back). Null until the
+        /// first round of the session actually finishes.
+        public CoatRoundResult.Result? LastResult { get; private set; }
 
         /// 0 shut, 1 fully up.
         public float DoorOpenness => _door;
@@ -112,7 +155,22 @@ namespace Coat
                     if (_left && AtHome >= 4 && (Loot == null || Loot.Delivered))
                     {
                         Now = Phase.Back;
-                        if (BestTime < 0f || Elapsed < BestTime) BestTime = Elapsed;
+
+                        // Settled HERE, not read on demand later: this is the one
+                        // and only moment the round actually closes, so it is the
+                        // one and only moment anything gets to ask whether it was
+                        // a getaway. EverRumbled, not Rumbled -- see CoatRoundResult.
+                        LastResult = CoatRoundResult.Settle(
+                            EverRumbled,
+                            Loot != null ? Loot.Fumbles : 0,
+                            PeakSuspicion,
+                            Elapsed);
+
+                        // A bust is not a record. Before outcomes existed every
+                        // finished round set the best time, including ones where
+                        // the observer had you dead to rights.
+                        if (LastResult.Value.Outcome == RoundOutcome.GotAway &&
+                            (BestTime < 0f || Elapsed < BestTime)) BestTime = Elapsed;
                     }
                     break;
 
@@ -203,6 +261,8 @@ namespace Coat
 
             Coat.DropAt(transform.TransformPoint(CoatSeat), transform.forward);
             if (Loot != null) Loot.Reset();
+            var loose = LooseObs; if (loose != null) loose.ClearSuspicion();
+            var worn = WornObs;   if (worn != null) worn.ClearSuspicion();
 
             Now = Phase.Loading;
             Elapsed = 0f;
@@ -236,7 +296,13 @@ namespace Coat
                           $"<i>get clear of the van</i>{job}";
                     break;
                 default:
-                    line = $"<color=#8ce87a><b>HOME</b></color>   {Elapsed:0.0}s" +
+                    var res = LastResult;
+                    string verdict = !res.HasValue
+                        ? "<color=#8ce87a><b>HOME</b></color>"
+                        : res.Value.Outcome == RoundOutcome.GotAway
+                            ? $"<color=#8ce87a><b>GOT AWAY</b></color>  +{res.Value.Payout} coins"
+                            : "<color=#ff5b5b><b>BUSTED</b></color>  no payout";
+                    line = $"{verdict}   {Elapsed:0.0}s" +
                            (Loot != null && Loot.Fumbles > 0
                                ? $"   <color=#ffd24a>dropped it {Loot.Fumbles}x</color>" : "") +
                            (BestTime >= 0f ? $"   best {BestTime:0.0}s" : "") +
@@ -245,6 +311,41 @@ namespace Coat
             }
 
             GUI.Label(new Rect(14f, 12f, 900f, 24f), line, style);
+
+            if (Now == Phase.Back && LastResult.HasValue) DrawVerdict(LastResult.Value);
+        }
+
+        GUIStyle _verdict, _verdictSub;
+
+        /// The payoff, drawn by the van rather than by a HUD. The vehicle swaps
+        /// HUDs along with observers -- CoatHud while the crew are loose,
+        /// ClassicHud while the coat is worn -- and a round always ends with
+        /// the coat worn, so a banner living in CoatHud was never on screen at
+        /// the one moment it existed for. The van draws regardless.
+        void DrawVerdict(CoatRoundResult.Result r)
+        {
+            _verdict ??= new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 40, fontStyle = FontStyle.Bold, richText = true,
+                alignment = TextAnchor.MiddleCenter
+            };
+            _verdictSub ??= new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 16, richText = true, alignment = TextAnchor.MiddleCenter
+            };
+
+            bool got = r.Outcome == RoundOutcome.GotAway;
+            const float w = 560f, h = 110f;
+            // Below both HUDs' panels, which are fixed-pixel and run down to
+            // y 372 at most. Up at the top it sat on top of them.
+            var box = new Rect((Screen.width - w) * 0.5f, 392f, w, h);
+            GUI.Box(box, GUIContent.none);
+            GUI.Label(new Rect(box.x, box.y + 10f, w, 52f),
+                got ? $"<color=#8ce87a>GOT AWAY  +{r.Payout}</color>"
+                    : "<color=#ff5b5b>BUSTED</color>", _verdict);
+            GUI.Label(new Rect(box.x, box.y + 66f, w, 30f),
+                got ? $"fumbles {r.Fumbles}  ·  peak suspicion {r.PeakSuspicion:0.00}  ·  {r.Seconds:0.0}s"
+                    : "you got made  ·  no payout", _verdictSub);
         }
 
         void OnDrawGizmosSelected()
