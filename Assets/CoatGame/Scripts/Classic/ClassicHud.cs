@@ -55,7 +55,9 @@ namespace Coat.Classic
 
             _style ??= new GUIStyle(GUI.skin.label) { fontSize = 15, richText = true };
 
-            GUILayout.BeginArea(new Rect(14, 14, 520, 190), GUI.skin.box);
+            // Starts at 40, not 14: CoatVan draws its own banner across the top
+            // at y 12 -- including the round verdict -- and this box ran over it.
+            GUILayout.BeginArea(new Rect(14, 40, 520, 190), GUI.skin.box);
 
             for (int i = 0; i < 4; i++)
             {
@@ -136,7 +138,8 @@ namespace Coat.Classic
             if (Observer == null) return;
 
             const float w = 520f;
-            var box = new Rect(14f, 212f, w, 86f);
+            // Tracks the panel above: 40 + 190 + a gap.
+            var box = new Rect(14f, 238f, w, 86f);
             GUI.Box(box, GUIContent.none);
 
             string watching = Observer.CanSee
