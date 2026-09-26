@@ -126,12 +126,27 @@ namespace Coat
             new System.Collections.Generic.List<ConfigurableJoint>();
 
         public CoatCharacter WearerAt(CoatRole role) => _wearers[(int)role];
-        public bool Occupied(CoatRole role) => _wearers[(int)role] != null;
+        public bool Occupied(CoatRole role) => _shownAboard >= 0
+            ? (_shownAboard & (1 << (int)role)) != 0
+            : _wearers[(int)role] != null;
 
         public int Count
         {
-            get { int n = 0; foreach (var w in _wearers) if (w != null) n++; return n; }
+            get
+            {
+                int n = 0;
+                if (_shownAboard >= 0) { for (int i = 0; i < 4; i++) if ((_shownAboard & (1 << i)) != 0) n++; return n; }
+                foreach (var w in _wearers) if (w != null) n++;
+                return n;
+            }
         }
+
+        /// Online, on a client: who the host has aboard, one bit per CoatRole. A
+        /// client's coat never has anybody climb into it, so without this every
+        /// readout of it ("0 of 4 in the coat") said nobody was in. Never set on
+        /// the host or offline, where the wearers themselves are the truth.
+        [System.NonSerialized] int _shownAboard = -1;
+        public void ApplyNetworkAboard(int mask) => _shownAboard = mask & 0xF;
 
         public bool FullyWorn => Count == 4;
 

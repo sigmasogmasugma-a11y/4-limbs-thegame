@@ -21,7 +21,8 @@ public static class CoatDressUp
     // colours are in the vertex colours, not in the materials. The eyes are
     // flat, because they are separate geometry joined in after the colour
     // attribute was made and so carry no colour of their own.
-    const string Lit = "Universal Render Pipeline/Lit";
+    /// Characters are toon shaded; see CoatToon.shader.
+    const string Toon = "Coat/Toon";
 
     const string CrewFbx = "Assets/CoatGame/Art/RedChild.fbx";
 
@@ -72,8 +73,7 @@ public static class CoatDressUp
             var smr = go.GetComponentInChildren<SkinnedMeshRenderer>();
             smr.updateWhenOffscreen = true;
 
-            var body = MakeMaterial("CoatCrew" + suffix,
-                                    "Universal Render Pipeline/Lit", tint);
+            var body = MakeMaterial("CoatCrew" + suffix, Toon, tint, LimbShade(suffix));
             // By measurement, not by index: the FBX permutes material slots,
             // so slot 0 is not reliably the body. A crew member is one solid
             // colour with eyes, so all that matters is telling the eyes apart
@@ -161,10 +161,11 @@ public static class CoatDressUp
         // It looked correct in every log because the logs printed the material
         // names THIS CODE had just assigned by index, not what the geometry was.
         //
-        // Stock URP Lit throughout, not the vertex-colour shader: that one drew
-        // nothing in the Game view. The project has RequireDepthTexture on, so
-        // URP runs a depth prepass, and the shader borrowed UsePass
-        // ".../Lit/DepthOnly" -- a pass written against URP's own Lit material.
+        // Coat/Toon throughout (Frog Sqwad's look), not the old vertex-colour
+        // shader: that one drew nothing in the Game view. The project has
+        // RequireDepthTexture on, so URP runs a depth prepass, and the shader
+        // borrowed UsePass ".../Lit/DepthOnly" -- a pass written against URP's own
+        // Lit material. Coat/Toon writes its own DepthOnly and DepthNormals.
         var mats = Classify(smr.sharedMesh, out string[] owners);
         smr.sharedMaterials = mats;
 
@@ -209,15 +210,31 @@ public static class CoatDressUp
     /// Classify() paints the disguise's limbs from these and DressCrew tints
     /// each child from the same table, so a child is always exactly the colour
     /// of the limb it controls.
+    ///
+    /// The values themselves live in CoatPalette (Frog Sqwad's palette), which
+    /// the menus and HUDs read too.
     public static Color LimbColour(string which)
     {
         switch (which)
         {
-            case "RightArm": return new Color(0.90f, 0.29f, 0.25f);   // red
-            case "LeftArm":  return new Color(0.20f, 0.45f, 0.88f);   // blue
-            case "RightLeg": return new Color(0.97f, 0.79f, 0.15f);   // yellow
-            case "LeftLeg":  return new Color(0.28f, 0.72f, 0.34f);   // green
-            default:         return new Color(0.78f, 0.73f, 0.65f);   // body
+            case "RightArm": return CoatPalette.RightArm;   // coral red
+            case "LeftArm":  return CoatPalette.LeftArm;    // cyan
+            case "RightLeg": return CoatPalette.RightLeg;   // orange
+            case "LeftLeg":  return CoatPalette.LeftLeg;    // lime
+            default:         return CoatPalette.Trenchcoat; // body
+        }
+    }
+
+    /// The toon shadow tone that goes with LimbColour.
+    public static Color LimbShade(string which)
+    {
+        switch (which)
+        {
+            case "RightArm": return CoatPalette.RightArmShade;
+            case "LeftArm":  return CoatPalette.LeftArmShade;
+            case "RightLeg": return CoatPalette.RightLegShade;
+            case "LeftLeg":  return CoatPalette.LeftLegShade;
+            default:         return CoatPalette.TrenchcoatShade;
         }
     }
 
@@ -265,17 +282,19 @@ public static class CoatDressUp
         {
             if (s == eye)
             {
-                mats[s] = MakeMaterial("CoatSkinEye", Lit, new Color(0.97f, 0.97f, 0.96f));
+                // Eye shadow is Frog Sqwad's cool blue-grey, not a darker white.
+                mats[s] = MakeMaterial("CoatSkinEye", Toon, CoatPalette.EyeWhite,
+                                       new Color(0.714f, 0.796f, 0.831f), outline: 1.4f);
                 owners[s] = "";
             }
             else if (s == pupil)
             {
-                mats[s] = MakeMaterial("CoatSkinPupil", Lit, new Color(0.03f, 0.03f, 0.04f));
+                mats[s] = MakeMaterial("CoatSkinPupil", Toon, CoatPalette.Pupil, CoatPalette.Pupil, outline: 0f);
                 owners[s] = "";
             }
             else if (Mathf.Abs(cx[s]) < 0.06f)
             {
-                mats[s] = MakeMaterial("CoatSkinBody", Lit, new Color(0.78f, 0.73f, 0.65f));
+                mats[s] = MakeMaterial("CoatSkinBody", Toon, CoatPalette.Trenchcoat, CoatPalette.TrenchcoatShade);
                 owners[s] = "";              // the trunk is always aboard
             }
             else
@@ -284,7 +303,7 @@ public static class CoatDressUp
                 bool leg = up[s] < 0.45f;
                 string role = (right ? "Right" : "Left") + (leg ? "Leg" : "Arm");
                 mats[s] = MakeMaterial("CoatSkin" + (leg ? "Leg" : "Arm") +
-                                       (right ? "R" : "L"), Lit, LimbColour(role));
+                                       (right ? "R" : "L"), Toon, LimbColour(role), LimbShade(role));
                 owners[s] = leg ? (right ? "ThighR" : "ThighL")
                                 : (right ? "UpperArmR" : "UpperArmL");
             }
@@ -292,7 +311,8 @@ public static class CoatDressUp
         return mats;
     }
 
-    static Material MakeMaterial(string name, string shader, Color colour)
+    static Material MakeMaterial(string name, string shader, Color colour,
+                                 Color? shade = null, float outline = -1f)
     {
         string path = $"{MatDir}/{name}.mat";
         var m = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -307,6 +327,10 @@ public static class CoatDressUp
         m.shader = sh;
         if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", colour);
         if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.08f);
+        // Toon (Coat/Toon): the shadow tone and the outline travel with the colour.
+        if (m.HasProperty("_ShadeColor")) m.SetColor("_ShadeColor", shade ?? CoatPalette.Shade(colour));
+        if (m.HasProperty("_OutlineColor")) m.SetColor("_OutlineColor", CoatPalette.Outline);
+        if (outline >= 0f && m.HasProperty("_OutlineWidth")) m.SetFloat("_OutlineWidth", outline);
         EditorUtility.SetDirty(m);
         return m;
     }

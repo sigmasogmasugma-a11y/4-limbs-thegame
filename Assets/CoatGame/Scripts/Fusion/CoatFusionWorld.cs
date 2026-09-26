@@ -1,0 +1,936 @@
+#if FUSION2
+using System;
+using System.Collections.Generic;
+using Fusion;
+using Fusion.Sockets;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using Coat.Classic;
+
+namespace Coat.Fusion
+{
+    /// Single State Authority for the shared four-limb body and heist state.
+    /// Each player owns one logical CoatRole; the host consumes all four inputs,
+    /// advances the existing gameplay/ClassicRagdoll, and replicates the result.
+    ///
+    /// Clients simulate nothing. Everything they show is copied from the host in
+    /// Render(): proxies do not run FixedUpdateNetwork in Fusion 2, so applying
+    /// state there would never happen on a client.
+    public sealed class CoatFusionWorld : NetworkBehaviour, INetworkRunnerCallbacks
+    {
+        /// Disguise (15) + four kids and the coat (61) in the test scene, with room
+        /// to spare.
+        public const int MaxBodies = 96;
+
+        [Header("Existing game")]
+        public CoatGame Game;
+        public ClassicRagdoll Ragdoll;
+        public ClassicObserver ClassicObserver;
+        public CoatObserver LooseObserver;
+        public LocalCoatInput LocalInput;
+        public Transform PhysicsRoot;
+
+        [Header("Session")]
+        public bool ProvideInput = true;
+        [Range(1, 4)] public int PlayerLimit = 4;
+
+        [Header("Networked heist state")]
+        [Networked, Capacity(4)] public NetworkArray<PlayerRef> RolePlayers => default;
+        [Networked] public int PlayerCount { get; private set; }
+        [Networked] public int RoundIndex { get; private set; } = -1;
+
+        // The van. The host's van ticks for real; clients copy these so the door,
+        // the clock and the banner match on every screen.
+        [Networked] public byte VanPhase { get; private set; }
+        [Networked] public float RoundTime { get; private set; }
+        [Networked] public int AtHome { get; private set; }
+        [Networked] public NetworkBool HasLeftVan { get; private set; }
+        [Networked] public float DoorOpen { get; private set; }
+        [Networked] public NetworkBool LootDelivered { get; private set; }
+
+        // The round result, as settled by CoatVan/CoatRoundResult on the host.
+        // 0 still running, 1 got away, 2 busted. Clients settle the same numbers
+        // locally so each player is paid into their own save.
+        [Networked] public byte RoundResult { get; private set; }
+        [Networked] public int ResultFumbles { get; private set; }
+        [Networked] public float ResultPeak { get; private set; }
+        [Networked] public float ResultSeconds { get; private set; }
+
+        // Both observers. They can be up at the same time (a partial crew means a
+        // disguise AND loose kids to look at), so each gets its own copy.
+        [Networked] public float Suspicion { get; private set; }
+        [Networked] public NetworkBool Rumbled { get; private set; }
+        [Networked] public NetworkBool ObserverCanSee { get; private set; }
+        [Networked] public NetworkString<_64> ObserverTell { get; private set; }
+        [Networked] public float ObserverTellStrength { get; private set; }
+        [Networked] public float ObserverYaw { get; private set; }
+        [Networked] public float LooseSuspicion { get; private set; }
+        [Networked] public NetworkBool LooseRumbled { get; private set; }
+        [Networked] public NetworkBool LooseCanSee { get; private set; }
+        [Networked] public NetworkString<_64> LooseTell { get; private set; }
+        [Networked] public float LooseTellStrength { get; private set; }
+        [Networked] public float LooseYaw { get; private set; }
+
+        // Who is where: the disguise up or folded, which limbs it wears, which kids
+        // are still loose, and where the coat is.
+        [Networked] public NetworkBool BodyUp { get; private set; }
+        [Networked] public byte LimbMask { get; private set; }
+        [Networked] public byte KidMask { get; private set; }
+        [Networked] public Vector3 CoatPosition { get; private set; }
+        [Networked] public Quaternion CoatRotation { get; private set; }
+
+        [Networked, Capacity(MaxBodies)] private NetworkArray<CoatFusionBodyState> Bodies => default;
+        [Networked] public Vector3 LootPosition { get; private set; }
+        [Networked] public Quaternion LootRotation { get; private set; }
+        [Networked] public Vector3 LootVelocity { get; private set; }
+        [Networked] public Vector3 LootAngularVelocity { get; private set; }
+
+        /// Which host tick the poses above are from. Clients move between the poses
+        /// of two stamps rather than jumping to each one as it lands.
+        [Networked] public int StateStamp { get; private set; }
+
+        readonly List<Rigidbody> _bodies = new(MaxBodies);
+        readonly CoatInputState[] _states = new CoatInputState[4];
+        readonly NetworkButtons[] _previousButtons = new NetworkButtons[4];
+        readonly bool[] _localActionWas = new bool[4];
+        readonly bool[] _localCoatWas = new bool[4];
+        readonly CoatFusionInput[] _lastInput = new CoatFusionInput[4];
+        readonly int[] _missedTicks = new int[4];
+
+        /// How long a remote player's last input is held when a tick's input is
+        /// late or lost (Photon's advice), before the limb is let go: 0.2 s.
+        const int HoldMissingInputTicks = 10;
+        bool _built;
+        bool _callbacksAdded;
+        bool _proxyPhysics;
+        bool _stepsPhysics;
+        UnityEngine.SimulationMode _oldSimulationMode;
+        int _localRole = -1;
+        int _lastAppliedRound = int.MinValue;
+        int _appliedLimbs = -1;
+        int _appliedPresence = -1;
+
+        public int LocalRoleIndex => _localRole;
+        public bool IsHostAuthority => Object != null && Object.HasStateAuthority;
+
+        /// Network ticks the host has run, and the last thing that went wrong in
+        /// one. Both go on the status line: the game is tested from screenshots of
+        /// the Game view, where the Console is not.
+        public int HostTicks { get; private set; }
+        public string LastError { get; private set; }
+
+        void Awake()
+        {
+            ResolveReferences();
+            BuildBodyList();
+        }
+
+        /// The disguise and both observers are switched off whenever the coat is
+        /// not worn, and FindFirstObjectByType skips switched-off objects by default.
+        /// So they are taken from the vehicle that owns them first, as CoatVan does.
+        void ResolveReferences()
+        {
+            if (Game == null) Game = FindFirstObjectByType<CoatGame>(FindObjectsInactive.Include);
+            var vehicle = Game != null ? Game.Vehicle : null;
+
+            if (Ragdoll == null && vehicle != null) Ragdoll = vehicle.Body;
+            if (Ragdoll == null) Ragdoll = FindFirstObjectByType<ClassicRagdoll>(FindObjectsInactive.Include);
+
+            if (ClassicObserver == null && vehicle != null && vehicle.WornObserver != null)
+                ClassicObserver = vehicle.WornObserver.GetComponent<ClassicObserver>();
+            if (ClassicObserver == null) ClassicObserver = FindFirstObjectByType<ClassicObserver>(FindObjectsInactive.Include);
+
+            if (LooseObserver == null && vehicle != null && vehicle.LooseObserver != null)
+                LooseObserver = vehicle.LooseObserver.GetComponent<CoatObserver>();
+            if (LooseObserver == null) LooseObserver = FindFirstObjectByType<CoatObserver>(FindObjectsInactive.Include);
+
+            if (LocalInput == null && Game != null) LocalInput = Game.Input;
+            if (PhysicsRoot == null && Ragdoll != null) PhysicsRoot = Ragdoll.transform;
+        }
+
+        /// The disguise, the four kids and the coat. The same list, in the same
+        /// order, on every peer: it comes from the scene, not from anything that
+        /// happens at runtime.
+        void BuildBodyList()
+        {
+            if (_built || PhysicsRoot == null) return;
+            _bodies.Clear();
+            AddBodies(PhysicsRoot);
+            if (Game != null)
+            {
+                foreach (var c in Game.Characters)
+                    if (c != null) AddBodies(c.transform);
+                if (Game.Coat != null) AddBodies(Game.Coat.transform);
+            }
+            if (_bodies.Count >= MaxBodies)
+                Debug.LogWarning($"[4 Limbs] More than {MaxBodies} bodies to sync; the rest are ignored. Raise CoatFusionWorld.MaxBodies.");
+            _built = true;
+        }
+
+        void AddBodies(Transform root)
+        {
+            foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
+            {
+                if (rb == null || _bodies.Contains(rb)) continue;
+                if (_bodies.Count >= MaxBodies) return;
+                _bodies.Add(rb);
+            }
+        }
+
+        public override void Spawned()
+        {
+            ResolveReferences();
+            BuildBodyList();
+
+            Runner.AddCallbacks(this);
+            var provider = GetComponent<CoatFusionInputProvider>();
+            if (provider == null) provider = gameObject.AddComponent<CoatFusionInputProvider>();
+            provider.World = this;
+            provider.LocalInput = LocalInput;
+            Runner.AddCallbacks(provider);
+            Runner.ProvideInput = ProvideInput;
+            _callbacksAdded = true;
+
+            if (Game != null) Game.ExternalSimulation = true;
+            if (Ragdoll != null) Ragdoll.ExternalSimulation = true;
+            if (ClassicObserver != null) ClassicObserver.ExternalSimulation = true;
+            if (LooseObserver != null) LooseObserver.ExternalSimulation = true;
+            if (Game != null && Game.Van != null) Game.Van.ExternalSimulation = true;
+
+            if (Object.HasStateAuthority)
+            {
+                PlayerCount = 0;
+                RoundResult = 0;
+                RoundTime = 0f;
+                InitialiseAuthoritativeRound();
+
+                foreach (var player in Runner.ActivePlayers)
+                    AssignRole(player);
+
+                // Offline, every script ticks in FixedUpdate and Unity steps the
+                // physics straight after. Online the game ticks here instead, so the
+                // host steps the physics itself after each tick to keep that order:
+                // input, then logic, then one physics step. The editor harnesses
+                // drive the game the same way.
+                _oldSimulationMode = UnityEngine.Physics.simulationMode;
+                UnityEngine.Physics.simulationMode = UnityEngine.SimulationMode.Script;
+                _stepsPhysics = true;
+
+                // The ragdoll's joints and step timings were tuned at the project's
+                // fixed timestep (0.02 s, 50 Hz). A different network tick changes
+                // how the body moves, so say so rather than let it feel quietly off.
+                if (Mathf.Abs(Runner.DeltaTime - Time.fixedDeltaTime) > 0.0001f)
+                    Debug.LogWarning($"[4 Limbs] Fusion ticks every {Runner.DeltaTime:0.####} s but physics is tuned for " +
+                                     $"{Time.fixedDeltaTime:0.####} s. Set the Tick Rate in the Network Project Config to " +
+                                     $"{Mathf.RoundToInt(1f / Time.fixedDeltaTime)} so the body moves the same as offline.");
+
+                // Fill in everything now, so a client never starts from defaults.
+                SyncGameplayState();
+                CaptureState();
+            }
+            else
+            {
+                MakeProxyPhysics();
+            }
+
+            RefreshLocalRole();
+            ApplyRoundState();
+        }
+
+        void InitialiseAuthoritativeRound()
+        {
+            var current = CoatRounds.Current;
+            if (current == null)
+                current = CoatRounds.Begin(CoatSave.Current);
+
+            RoundIndex = FindRoundIndex(current);
+            _lastAppliedRound = RoundIndex;
+        }
+
+        static int FindRoundIndex(RoundDef round)
+        {
+            if (round == null) return -1;
+            var all = CoatRounds.All;
+            for (int i = 0; i < all.Count; i++)
+                if (all[i] == round || (all[i] != null && all[i].Id == round.Id)) return i;
+            return -1;
+        }
+
+        void ApplyRoundState()
+        {
+            if (RoundIndex == _lastAppliedRound) return;
+            _lastAppliedRound = RoundIndex;
+            var all = CoatRounds.All;
+            if (RoundIndex >= 0 && RoundIndex < all.Count && all[RoundIndex] != null)
+                CoatRounds.SetCurrent(all[RoundIndex].Id);
+        }
+
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            if (_callbacksAdded)
+            {
+                runner.RemoveCallbacks(this);
+                var provider = GetComponent<CoatFusionInputProvider>();
+                if (provider != null) runner.RemoveCallbacks(provider);
+                _callbacksAdded = false;
+            }
+            if (_stepsPhysics)
+            {
+                UnityEngine.Physics.simulationMode = _oldSimulationMode;
+                _stepsPhysics = false;
+            }
+            if (Game != null) Game.ExternalSimulation = false;
+            if (Ragdoll != null) Ragdoll.ExternalSimulation = false;
+            if (ClassicObserver != null) ClassicObserver.ExternalSimulation = false;
+            if (LooseObserver != null) LooseObserver.ExternalSimulation = false;
+            if (Game != null && Game.Van != null) Game.Van.ExternalSimulation = false;
+        }
+
+        // ---- host --------------------------------------------------------------
+
+        public override void FixedUpdateNetwork()
+        {
+            if (!Object.HasStateAuthority) return;
+            HostTicks++;
+
+            try
+            {
+                ResolveReferences();
+                BuildBodyList();
+                ReconcileRoles();
+                RefreshLocalRole();
+
+                SimulateAuthority();
+                CaptureState();
+            }
+            catch (Exception e)
+            {
+                // Logged once per kind rather than fifty times a second.
+                string what = e.GetType().Name + ": " + e.Message;
+                if (what != LastError)
+                {
+                    LastError = what;
+                    Debug.LogException(e);
+                }
+            }
+        }
+
+        void SimulateAuthority()
+        {
+            float dt = Runner.DeltaTime;
+
+            Array.Clear(_states, 0, _states.Length);
+            for (int role = 0; role < 4; role++)
+            {
+                PlayerRef player = RolePlayers.Get(role);
+
+                // Nobody joined for this limb: the host plays it on its offline keys,
+                // unless those are the keys the host already plays its own limb on.
+                if (!Connected(player))
+                {
+                    bool clash = role == CoatFusionInputProvider.OwnControls && _localRole >= 0 && _localRole != role;
+                    if (!clash) FromHostKeyboard(role, role);
+                    continue;
+                }
+
+                // The host's own limb is read straight off the host's own controls.
+                // Sent through Fusion's input and read back, it never arrived: the
+                // host's limb stood still while every limb read from its keyboard
+                // moved. Nothing is lost, as the host is where the input is.
+                if (player == Runner.LocalPlayer)
+                {
+                    FromHostKeyboard(role, CoatFusionInputProvider.OwnControls);
+                    _missedTicks[role] = 0;
+                    continue;
+                }
+
+                _localActionWas[role] = _localCoatWas[role] = false;
+
+                if (Runner.TryGetInputForPlayer<CoatFusionInput>(player, out var input))
+                {
+                    _states[role].Move = Vector2.ClampMagnitude(input.Move, 1f);
+                    _states[role].Action = input.Action;
+                    _states[role].ActionDown = input.Buttons.WasPressed(_previousButtons[role], CoatFusionButton.Action);
+                    _states[role].Coat = input.Coat;
+                    _states[role].CoatDown = input.Buttons.WasPressed(_previousButtons[role], CoatFusionButton.Coat);
+                    _previousButtons[role] = input.Buttons;
+                    _lastInput[role] = input;
+                    _missedTicks[role] = 0;
+                }
+                else if (++_missedTicks[role] <= HoldMissingInputTicks)
+                {
+                    // Late or lost this tick: keep holding what they held, so a
+                    // hiccup is not a stumble. Presses are not repeated.
+                    var last = _lastInput[role];
+                    _states[role].Move = Vector2.ClampMagnitude(last.Move, 1f);
+                    _states[role].Action = last.Action;
+                    _states[role].Coat = last.Coat;
+                }
+            }
+
+            // CoatGame still owns character/coat/vehicle/loot/van ordering. We
+            // temporarily expose the authoritative network input so those systems
+            // see the exact same four role states as ClassicRagdoll.
+            if (Game != null && Game.Input != null)
+            {
+                var oldStates = Game.Input.States;
+                Game.Input.States = _states;
+                try { Game.Tick(dt); }
+                finally { Game.Input.States = oldStates; }
+            }
+            else if (Game != null)
+            {
+                Game.Tick(dt);
+            }
+
+            // ClassicRagdoll normally reads LocalCoatInput in its own FixedUpdate. In
+            // Fusion mode that FixedUpdate is off and this is the input path. Only
+            // while it is switched on, exactly as FixedUpdate would have been.
+            if (Ragdoll != null && Ragdoll.isActiveAndEnabled)
+                Ragdoll.Tick(_states, dt);
+
+            // Observers tick by hand only while they are up: CoatVehicle switches
+            // them on and off, and offline an inactive observer's FixedUpdate never
+            // runs. Ticking a switched-off one would grade a body nobody can see.
+            if (ClassicObserver != null && ClassicObserver.isActiveAndEnabled)
+                ClassicObserver.Tick(dt);
+            if (LooseObserver != null && LooseObserver.isActiveAndEnabled)
+                LooseObserver.Tick(dt);
+
+            if (_stepsPhysics) UnityEngine.Physics.Simulate(dt);
+
+            SyncGameplayState();
+        }
+
+        void SyncGameplayState()
+        {
+            var van = Game != null ? Game.Van : null;
+            var loot = Game != null ? Game.Loot : null;
+
+            if (van != null)
+            {
+                VanPhase = (byte)van.Now;
+                RoundTime = van.Elapsed;
+                AtHome = van.AtHome;
+                HasLeftVan = van.HasLeft;
+                DoorOpen = van.DoorOpenness;
+
+                // The round result is the van's, settled by CoatRoundResult at the
+                // one moment the round closes (EverRumbled, not Rumbled). Nothing
+                // here re-decides it; this only reports it.
+                if (van.Now == CoatVan.Phase.Back && van.LastResult.HasValue)
+                {
+                    var r = van.LastResult.Value;
+                    RoundResult = (byte)(r.Outcome == RoundOutcome.GotAway ? 1 : 2);
+                    ResultFumbles = r.Fumbles;
+                    ResultPeak = r.PeakSuspicion;
+                    ResultSeconds = r.Seconds;
+                }
+                else
+                {
+                    RoundResult = 0;
+                }
+            }
+            else
+            {
+                RoundTime += Runner.DeltaTime;
+            }
+
+            LootDelivered = loot != null && loot.Delivered;
+            if (loot != null && loot.Body != null)
+            {
+                LootPosition = loot.Body.position;
+                LootRotation = loot.Body.rotation;
+                LootVelocity = loot.Body.linearVelocity;
+                LootAngularVelocity = loot.Body.angularVelocity;
+            }
+
+            if (ClassicObserver != null)
+            {
+                Suspicion = ClassicObserver.Suspicion;
+                Rumbled = ClassicObserver.Rumbled;
+                ObserverCanSee = ClassicObserver.CanSee;
+                ObserverTell = ClassicObserver.Tell ?? string.Empty;
+                ObserverTellStrength = ClassicObserver.TellStrength;
+                ObserverYaw = ClassicObserver.transform.eulerAngles.y;
+            }
+            if (LooseObserver != null)
+            {
+                LooseSuspicion = LooseObserver.Suspicion;
+                LooseRumbled = LooseObserver.Rumbled;
+                LooseCanSee = LooseObserver.CanSee;
+                LooseTell = LooseObserver.Tell ?? string.Empty;
+                LooseTellStrength = LooseObserver.TellStrength;
+                LooseYaw = LooseObserver.transform.eulerAngles.y;
+            }
+
+            BodyUp = Ragdoll != null && Ragdoll.gameObject.activeSelf;
+
+            int limbs = 0;
+            if (Game != null && Game.Coat != null)
+            {
+                if (Game.Coat.Occupied(CoatRole.LeftLeg)) limbs |= 1;
+                if (Game.Coat.Occupied(CoatRole.RightLeg)) limbs |= 2;
+                if (Game.Coat.Occupied(CoatRole.LeftArm)) limbs |= 4;
+                if (Game.Coat.Occupied(CoatRole.RightArm)) limbs |= 8;
+                CoatPosition = Game.Coat.transform.position;
+                CoatRotation = Game.Coat.transform.rotation;
+            }
+            LimbMask = (byte)limbs;
+
+            int kids = 0;
+            if (Game != null)
+                for (int i = 0; i < Game.Characters.Length && i < 8; i++)
+                    if (Game.Characters[i] != null && Game.Characters[i].gameObject.activeSelf) kids |= 1 << i;
+            KidMask = (byte)kids;
+        }
+
+        void CaptureState()
+        {
+            StateStamp = HostTicks;
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                var rb = _bodies[i];
+                if (rb == null) continue;
+                Bodies.Set(i, new CoatFusionBodyState
+                {
+                    Active = rb.gameObject.activeSelf,
+                    Position = rb.position,
+                    Rotation = rb.rotation,
+                    Velocity = rb.linearVelocity,
+                    AngularVelocity = rb.angularVelocity
+                });
+            }
+        }
+
+        // ---- clients -----------------------------------------------------------
+
+        /// Runs every frame on every peer. Clients copy the host's latest state;
+        /// the host has nothing to copy.
+        public override void Render()
+        {
+            if (Object == null || Object.HasStateAuthority) return;
+
+            ResolveReferences();
+            BuildBodyList();
+            RefreshLocalRole();
+            ApplyRoundState();
+
+            ApplyPresence();
+            ApplyState();
+            ApplyObserverState();
+            ApplyVanState();
+        }
+
+        /// Who is switched on, as the host has it: the disguise, its limbs, the
+        /// kids, and which observers and HUDs are up. Only touched when it changes.
+        void ApplyPresence()
+        {
+            if (Game != null && Game.Coat != null)
+                Game.Coat.ApplyNetworkAboard(LimbMask);
+
+            int presence = (BodyUp ? 1 : 0) | (KidMask << 1);
+            if (presence != _appliedPresence)
+            {
+                _appliedPresence = presence;
+                _snapNext = true;   // kids popping in or out of the coat jump, not slide
+
+                if (Ragdoll != null && Ragdoll.gameObject.activeSelf != BodyUp)
+                    Ragdoll.gameObject.SetActive(BodyUp);
+
+                if (Game != null)
+                    for (int i = 0; i < Game.Characters.Length && i < 8; i++)
+                    {
+                        var c = Game.Characters[i];
+                        if (c == null) continue;
+                        bool up = (KidMask & (1 << i)) != 0;
+                        if (c.gameObject.activeSelf != up) c.gameObject.SetActive(up);
+                    }
+
+                if (Game != null && Game.Vehicle != null)
+                    Game.Vehicle.ApplyNetworkState(BodyUp, KidMask != 0);
+
+                _appliedLimbs = -1;   // a body that just stood up needs its limbs again
+            }
+
+            if (BodyUp && Ragdoll != null && LimbMask != _appliedLimbs)
+            {
+                _appliedLimbs = LimbMask;
+                Ragdoll.SetLimbs((LimbMask & 1) != 0, (LimbMask & 2) != 0,
+                                 (LimbMask & 4) != 0, (LimbMask & 8) != 0);
+            }
+        }
+
+        void ApplyObserverState()
+        {
+            if (ClassicObserver != null)
+            {
+                ClassicObserver.ApplyNetworkState(
+                    Suspicion, Rumbled, ObserverTell.ToString(), ObserverTellStrength, ObserverCanSee);
+                Face(ClassicObserver.transform, ObserverYaw);
+            }
+            if (LooseObserver != null)
+            {
+                LooseObserver.ApplyNetworkState(
+                    LooseSuspicion, LooseRumbled, LooseTell.ToString(), LooseTellStrength, LooseCanSee);
+                Face(LooseObserver.transform, LooseYaw);
+            }
+        }
+
+        /// The observer's head turn is replicated state: which way they look is
+        /// gameplay, and only the host decides it.
+        static void Face(Transform t, float yaw)
+        {
+            var e = t.eulerAngles;
+            t.rotation = Quaternion.Euler(e.x, yaw, e.z);
+        }
+
+        void ApplyVanState()
+        {
+            var van = Game != null ? Game.Van : null;
+            if (van == null) return;
+
+            van.ApplyNetworkState((CoatVan.Phase)VanPhase, RoundTime, AtHome, HasLeftVan, DoorOpen);
+            if (RoundResult != 0)
+                van.ApplyNetworkResult(RoundResult == 2, ResultFumbles, ResultPeak, ResultSeconds);
+        }
+
+        // Smoothing. The host sends its poses a few dozen times a second (the
+        // Server Send Rate), and placing each body straight onto them drew every
+        // client at that rate, however fast it rendered: the build looked like it
+        // ran at 25 fps. On the host, Unity's rigidbody interpolation hides the
+        // same thing. So each client moves every body from where it is drawn now
+        // to the host's newest pose, over the time the host took to produce it.
+        // One slot per synced body, then the loot, then the coat.
+
+        Vector3[] _fromPos = Array.Empty<Vector3>(), _toPos = Array.Empty<Vector3>();
+        Quaternion[] _fromRot = Array.Empty<Quaternion>(), _toRot = Array.Empty<Quaternion>();
+        bool[] _hasPose = Array.Empty<bool>();
+        int _stamp = -1;
+        bool _snapNext;
+        float _arrivedAt, _span;
+        int _arrivals;
+        float _countingSince;
+
+        /// Further than this between two host poses is a teleport, not movement:
+        /// drawn as a jump rather than a slide across the level.
+        const float SnapDistance = 1.5f;
+
+        int LootSlot => _bodies.Count;
+        int CoatSlot => _bodies.Count + 1;
+
+        /// Client only: how many fresh states from the host arrive per second.
+        public float HostUpdatesPerSecond { get; private set; }
+
+        void ApplyState()
+        {
+            int slots = _bodies.Count + 2;
+            if (_toPos.Length != slots)
+            {
+                _fromPos = new Vector3[slots];
+                _toPos = new Vector3[slots];
+                _fromRot = new Quaternion[slots];
+                _toRot = new Quaternion[slots];
+                _hasPose = new bool[slots];
+                _stamp = -1;
+            }
+
+            var loot = Game != null ? Game.Loot : null;
+            var lootBody = loot != null ? loot.Body : null;
+            var coat = Game != null && Game.Coat != null ? Game.Coat.transform : null;
+
+            // Switched on and off with the host straight away. A body that has just
+            // come on starts where the host has it, not where it was switched off.
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                var rb = _bodies[i];
+                if (rb == null) continue;
+                var state = Bodies.Get(i);
+                if (rb.gameObject.activeSelf == state.Active) continue;
+                rb.gameObject.SetActive(state.Active);
+                Retarget(i, rb.transform, state.Position, state.Rotation, true);
+            }
+
+            int stamp = StateStamp;
+            if (stamp != _stamp || _snapNext)
+            {
+                bool snap = _snapNext || _stamp < 0;
+                _span = Mathf.Clamp(stamp - _stamp, 1, 25) * Runner.DeltaTime;
+                _stamp = stamp;
+                _snapNext = false;
+                _arrivedAt = Time.unscaledTime;
+                _arrivals++;
+
+                for (int i = 0; i < _bodies.Count; i++)
+                {
+                    var rb = _bodies[i];
+                    if (rb == null) continue;
+                    var state = Bodies.Get(i);
+                    Retarget(i, rb.transform, state.Position, state.Rotation, snap);
+                }
+                if (lootBody != null) Retarget(LootSlot, lootBody.transform, LootPosition, LootRotation, snap);
+                if (coat != null) Retarget(CoatSlot, coat, CoatPosition, CoatRotation, snap);
+            }
+
+            float t = Mathf.Clamp01((Time.unscaledTime - _arrivedAt) / Mathf.Max(_span, 0.001f));
+
+            // The coat first: it carries its hub, which is one of the bodies.
+            if (coat != null) Place(CoatSlot, coat, null, t);
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                var rb = _bodies[i];
+                if (rb != null && rb.gameObject.activeSelf) Place(i, rb.transform, rb, t);
+            }
+            if (lootBody != null) Place(LootSlot, lootBody.transform, lootBody, t);
+
+            float counted = Time.unscaledTime - _countingSince;
+            if (counted >= 1f)
+            {
+                HostUpdatesPerSecond = _arrivals / counted;
+                _arrivals = 0;
+                _countingSince = Time.unscaledTime;
+            }
+        }
+
+        /// A new pose from the host: move to it from wherever this is drawn now, so
+        /// nothing jumps when a state lands early or late.
+        void Retarget(int slot, Transform shown, Vector3 position, Quaternion rotation, bool snap)
+        {
+            if (!Valid(rotation)) { _hasPose[slot] = false; return; }
+
+            bool jump = snap || !_hasPose[slot]
+                     || (position - shown.position).sqrMagnitude > SnapDistance * SnapDistance;
+            _fromPos[slot] = jump ? position : shown.position;
+            _fromRot[slot] = jump ? rotation : shown.rotation;
+            _toPos[slot] = position;
+            _toRot[slot] = rotation;
+            _hasPose[slot] = true;
+        }
+
+        /// Drawn at t between the two poses. The rigidbody is set as well as the
+        /// transform, so anything reading Rigidbody.position (the camera does)
+        /// sees the same place.
+        void Place(int slot, Transform shown, Rigidbody rb, float t)
+        {
+            if (!_hasPose[slot]) return;
+            var p = Vector3.Lerp(_fromPos[slot], _toPos[slot], t);
+            var r = Quaternion.Slerp(_fromRot[slot], _toRot[slot], t);
+            shown.SetPositionAndRotation(p, r);
+            if (rb != null)
+            {
+                rb.position = p;
+                rb.rotation = r;
+            }
+        }
+
+        /// A networked Quaternion that was never written is all zeros, which is not
+        /// a rotation, and Unity complains loudly if handed one.
+        static bool Valid(Quaternion q) => q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w > 0.5f;
+
+        /// Clients never simulate: every synced body, and the loot, is placed from
+        /// the host's state. Velocities are cleared BEFORE going kinematic, since
+        /// Unity refuses velocity on a kinematic body. Rigidbody interpolation is
+        /// switched off: ApplyState smooths these itself, every frame, and Unity's
+        /// interpolation would fight it for the transform.
+        void MakeProxyPhysics()
+        {
+            if (_proxyPhysics) return;
+            _proxyPhysics = true;
+
+            foreach (var rb in _bodies)
+                MakeKinematic(rb);
+
+            var loot = Game != null ? Game.Loot : null;
+            if (loot != null) MakeKinematic(loot.Body);
+        }
+
+        static void MakeKinematic(Rigidbody rb)
+        {
+            if (rb == null) return;
+            rb.interpolation = RigidbodyInterpolation.None;
+            if (rb.isKinematic) return;
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+        }
+
+        // ---- players -----------------------------------------------------------
+
+        void RefreshLocalRole()
+        {
+            if (Runner == null) return;
+            _localRole = -1;
+            for (int i = 0; i < 4; i++)
+                if (RolePlayers.Get(i) == Runner.LocalPlayer) { _localRole = i; break; }
+        }
+
+        /// Whether this player is in the session right now, and the only test for
+        /// a taken limb. Fusion 2 retired PlayerRef.IsValid (IsRealPlayer replaced
+        /// it), so it is not trusted to say whether a slot is empty: an empty slot
+        /// read as taken deals nobody a limb and sends nobody's input anywhere.
+        bool Connected(PlayerRef player)
+        {
+            if (player == PlayerRef.None || Runner == null) return false;
+            foreach (var active in Runner.ActivePlayers)
+                if (active == player) return true;
+            return false;
+        }
+
+        /// Whether a limb is being played by someone in the session. False means
+        /// the host's own keyboard plays it.
+        public bool RoleTaken(int role) => role >= 0 && role < 4 && Connected(RolePlayers.Get(role));
+
+        /// Whether a limb is this machine's own player.
+        public bool RoleIsLocal(int role) => RoleTaken(role) && Runner != null && RolePlayers.Get(role) == Runner.LocalPlayer;
+
+        /// Host only: whether a remote player's input for this limb is reaching the
+        /// host, for the status line. False after a moment with none.
+        public bool InputArriving(int role) => role >= 0 && role < 4 && _missedTicks[role] <= HoldMissingInputTicks;
+
+        int RoleOf(PlayerRef player)
+        {
+            for (int i = 0; i < 4; i++)
+                if (RolePlayers.Get(i) == player) return i;
+            return -1;
+        }
+
+        /// Every connected player has a limb and every limb's player is still
+        /// connected, checked every tick rather than trusted to join/leave events.
+        /// On the host its own player joins before this object spawns, so neither
+        /// Spawned's sweep nor OnPlayerJoined ever saw it.
+        void ReconcileRoles()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                var p = RolePlayers.Get(i);
+                if (p != PlayerRef.None && !Connected(p)) ClearRole(i);
+            }
+
+            foreach (var a in Runner.ActivePlayers)
+                if (RoleOf(a) < 0) AssignRole(a);
+
+            CountPlayers();
+        }
+
+        /// Counted from the limbs every time, never added to or taken from, so it
+        /// cannot drift from who is actually playing.
+        void CountPlayers()
+        {
+            int count = 0;
+            for (int i = 0; i < 4; i++)
+                if (Connected(RolePlayers.Get(i))) count++;
+            if (PlayerCount != count) PlayerCount = count;
+        }
+
+        /// A limb played from the host's own keyboard: the host's own limb, on the
+        /// shared online controls, and any limb nobody has joined for, on its
+        /// offline keys (I J K L, T F G H, P ; / '), so one person can test online
+        /// alone exactly as offline and a crew short of four can still get
+        /// everyone into the coat.
+        ///
+        /// Press edges are worked out here, once per network tick, from the held
+        /// keys: LocalCoatInput's own edges are per rendered frame, and a tick can
+        /// run zero or two times in a frame, which would drop or double a climb-in.
+        void FromHostKeyboard(int role, int controls)
+        {
+            var local = LocalInput != null ? LocalInput.States : null;
+            if (local == null || controls < 0 || controls >= local.Length) return;
+
+            var k = local[controls];
+            _states[role].Move = Vector2.ClampMagnitude(k.Move, 1f);
+            _states[role].Action = k.Action;
+            _states[role].ActionDown = k.Action && !_localActionWas[role];
+            _states[role].Coat = k.Coat;
+            _states[role].CoatDown = k.Coat && !_localCoatWas[role];
+            _localActionWas[role] = k.Action;
+            _localCoatWas[role] = k.Coat;
+        }
+
+        void AssignRole(PlayerRef player)
+        {
+            if (!Object.HasStateAuthority || !Connected(player) || RoleOf(player) >= 0) return;
+
+            int taken = 0;
+            for (int i = 0; i < 4; i++)
+                if (RoleTaken(i)) taken++;
+            if (taken >= Mathf.Clamp(PlayerLimit, 1, 4)) return;
+
+            for (int i = 0; i < 4; i++)
+            {
+                if (RoleTaken(i)) continue;
+                RolePlayers.Set(i, player);
+                _previousButtons[i] = default;
+                _lastInput[i] = default;
+                _missedTicks[i] = 0;
+                CountPlayers();
+                Debug.Log($"[4 Limbs] {player} plays the {RoleName(i)}.");
+                return;
+            }
+        }
+
+        void RemoveRole(PlayerRef player)
+        {
+            if (!Object.HasStateAuthority) return;
+            int role = RoleOf(player);
+            if (role >= 0) ClearRole(role);
+            CountPlayers();
+        }
+
+        void ClearRole(int role)
+        {
+            RolePlayers.Set(role, PlayerRef.None);
+            _previousButtons[role] = default;
+            _lastInput[role] = default;
+            _missedTicks[role] = 0;
+        }
+
+        public static string RoleName(int role) => role switch
+        {
+            (int)CoatRole.LeftLeg => "left leg",
+            (int)CoatRole.RightLeg => "right leg",
+            (int)CoatRole.LeftArm => "left arm",
+            (int)CoatRole.RightArm => "right arm",
+            _ => "nothing"
+        };
+
+        public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+        {
+            if (Object.HasStateAuthority) AssignRole(player);
+            RefreshLocalRole();
+        }
+
+        public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+        {
+            if (Object.HasStateAuthority) RemoveRole(player);
+            RefreshLocalRole();
+        }
+
+        public void OnInput(NetworkRunner runner, NetworkInput input) { }
+        public void OnConnectedToServer(NetworkRunner runner) { }
+        public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) { }
+        public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
+        public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
+        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) { }
+        public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
+        public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
+        public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+        public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+        public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
+        public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ReadOnlySpan<byte> data) { }
+        public void OnSceneLoadDone(NetworkRunner runner) { }
+        public void OnSceneLoadStart(NetworkRunner runner) { }
+        public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) { }
+        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
+        public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
+    }
+
+    public struct CoatFusionBodyState : INetworkStruct
+    {
+        public NetworkBool Active;
+        public Vector3 Position;
+        public Quaternion Rotation;
+        public Vector3 Velocity;
+        public Vector3 AngularVelocity;
+    }
+}
+#endif

@@ -15,6 +15,13 @@ namespace Coat
     /// The level's materials are shared assets saved on disk, so nothing here ever
     /// touches them -- each blocked renderer gets its own transparent clone and its
     /// originals are put back when it clears.
+    ///
+    /// Builds keep only the shader variants some shipped material uses, and no
+    /// level material is transparent, so a clone came out solid in a build (only
+    /// the kids' ambient occlusion showed through the van) while it worked in the
+    /// editor. Resources/CoatSeeThroughVariant.mat is URP Lit with exactly the
+    /// keywords a clone ends up with, only so that variant ships. A level material
+    /// with keywords of its own would need its own transparent twin there too.
     [DefaultExecutionOrder(200)]
     public class CoatSeeThrough : MonoBehaviour
     {

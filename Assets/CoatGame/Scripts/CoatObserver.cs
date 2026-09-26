@@ -15,6 +15,10 @@ namespace Coat
         public Transform Eye;
         public Renderer Skin;
 
+        /// Fusion evaluates the observer on State Authority only. Proxies receive
+        /// the replicated suspicion result instead of running their own perception.
+        public bool ExternalSimulation;
+
         [Header("Eyesight")]
         public float ViewDistance = 9f;
         [Tooltip("Full width of the vision cone, in degrees.")]
@@ -65,7 +69,11 @@ namespace Coat
             _mpb = new MaterialPropertyBlock();
         }
 
-        void FixedUpdate() => Tick(Time.fixedDeltaTime);
+        void FixedUpdate()
+        {
+            if (ExternalSimulation) return;
+            Tick(Time.fixedDeltaTime);
+        }
 
         public void Tick(float dt)
         {
@@ -94,6 +102,21 @@ namespace Coat
 
             PeakSuspicion = Mathf.Max(PeakSuspicion, Suspicion);
 
+            Paint();
+        }
+
+        /// Apply the authoritative observer result on a client. Same as
+        /// ClassicObserver.ApplyNetworkState: the round-long history is kept in
+        /// step so the client sees the same run the host judged.
+        public void ApplyNetworkState(float suspicion, bool rumbled, string tell, float tellStrength, bool canSee)
+        {
+            Suspicion = Mathf.Clamp01(suspicion);
+            Rumbled = rumbled;
+            if (rumbled) EverRumbled = true;
+            PeakSuspicion = Mathf.Max(PeakSuspicion, Suspicion);
+            Tell = string.IsNullOrEmpty(tell) ? "-" : tell;
+            TellStrength = Mathf.Clamp01(tellStrength);
+            CanSee = canSee;
             Paint();
         }
 

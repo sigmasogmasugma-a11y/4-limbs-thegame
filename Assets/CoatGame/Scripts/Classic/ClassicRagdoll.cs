@@ -8,6 +8,10 @@ namespace Coat.Classic
     public class ClassicRagdoll : MonoBehaviour
     {
         public LocalCoatInput Input;
+
+        /// Fusion drives this ragdoll explicitly from host-authoritative input.
+        /// When false, the original FixedUpdate/local-input path is unchanged.
+        public bool ExternalSimulation;
         public Transform CameraRef;
 
         [Header("Parts")]
@@ -317,9 +321,21 @@ namespace Coat.Classic
             return Pelvis.position + across * (side * StanceWidth);
         }
 
-        void FixedUpdate() => Tick(Time.fixedDeltaTime);
+        void FixedUpdate()
+        {
+            if (ExternalSimulation) return;
+            Tick(Time.fixedDeltaTime);
+        }
 
         public void Tick(float dt)
+        {
+            Tick(Input != null ? Input.States : null, dt);
+        }
+
+        /// Network-safe entry point. The simulation consumes the supplied four-role
+        /// input instead of reaching into LocalCoatInput, so Fusion can feed the exact
+        /// host-authoritative inputs received from the four players.
+        public void Tick(CoatInputState[] states, float dt)
         {
             float camYaw = CameraRef != null ? CameraRef.eulerAngles.y : 0f;
 
@@ -361,8 +377,8 @@ namespace Coat.Classic
             // Taking turns is only a rule when there are two legs to take them.
             bool takeTurns = AlternatingSteps && Legs == 2;
 
-            var l = Input.Get(CoatRole.LeftLeg);
-            var r = Input.Get(CoatRole.RightLeg);
+            var l = GetInput(states, CoatRole.LeftLeg);
+            var r = GetInput(states, CoatRole.RightLeg);
 
             // The splits. Two leg players pulling opposite ways drag their own
             // feet apart, and after a moment the legs stop holding the body up.
@@ -400,10 +416,12 @@ namespace Coat.Classic
             LegR.Tick(r.Move, r.Action, camYaw, dt, LegL.Present && LegL.Airborne, rightMay);
             if (LegR.JustStepped) { _nextLeg = Leg.Left; _turnWait = 0f; NoteStep(LegR.LastStepDir); }
 
-            ArmL.Tick(Input.Get(CoatRole.LeftArm).Move, Input.Get(CoatRole.LeftArm).Action, camYaw, dt);
-            ArmR.Tick(Input.Get(CoatRole.RightArm).Move, Input.Get(CoatRole.RightArm).Action, camYaw, dt);
+            var la = GetInput(states, CoatRole.LeftArm);
+            var ra = GetInput(states, CoatRole.RightArm);
+            ArmL.Tick(la.Move, la.Action, camYaw, dt);
+            ArmR.Tick(ra.Move, ra.Action, camYaw, dt);
 
-            UpdateBalance(ramp, dt);
+            UpdateBalance(ramp, dt, states);
 
             // With no legs there is nothing to stand on and nothing to get up with, so
             // the collapse timer would only churn. It is already as down as it gets.
@@ -435,7 +453,13 @@ namespace Coat.Classic
             if (_lowTimer > CollapseGrace) Collapse();
         }
 
-        void UpdateBalance(float ramp, float dt)
+        static CoatInputState GetInput(CoatInputState[] states, CoatRole role)
+        {
+            int i = (int)role;
+            return states != null && i >= 0 && i < states.Length ? states[i] : default;
+        }
+
+        void UpdateBalance(float ramp, float dt, CoatInputState[] states)
         {
             // Foot TARGETS, not where the feet physically are: a dragged foot would move
             // the support point, which moves the body, which drags the foot further.
@@ -502,8 +526,8 @@ namespace Coat.Classic
             Stability *= handicap;
 
             float authority = Stability * ramp;
-            if (LegL.Present && LegL.Planted && Input.Get(CoatRole.LeftLeg).Action) authority = Mathf.Min(1f, authority * BraceBonus);
-            if (LegR.Present && LegR.Planted && Input.Get(CoatRole.RightLeg).Action) authority = Mathf.Min(1f, authority * BraceBonus);
+            if (LegL.Present && LegL.Planted && GetInput(states, CoatRole.LeftLeg).Action) authority = Mathf.Min(1f, authority * BraceBonus);
+            if (LegR.Present && LegR.Planted && GetInput(states, CoatRole.RightLeg).Action) authority = Mathf.Min(1f, authority * BraceBonus);
 
             float lift = _recover > 0f ? RecoverBoost : 1f;
 
