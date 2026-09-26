@@ -421,7 +421,7 @@ namespace Coat.Classic
             ArmL.Tick(la.Move, la.Action, camYaw, dt);
             ArmR.Tick(ra.Move, ra.Action, camYaw, dt);
 
-            UpdateBalance(ramp, dt);
+            UpdateBalance(ramp, dt, states);
 
             // With no legs there is nothing to stand on and nothing to get up with, so
             // the collapse timer would only churn. It is already as down as it gets.
@@ -459,7 +459,7 @@ namespace Coat.Classic
             return states != null && i >= 0 && i < states.Length ? states[i] : default;
         }
 
-        void UpdateBalance(float ramp, float dt)
+        void UpdateBalance(float ramp, float dt, CoatInputState[] states)
         {
             // Foot TARGETS, not where the feet physically are: a dragged foot would move
             // the support point, which moves the body, which drags the foot further.
