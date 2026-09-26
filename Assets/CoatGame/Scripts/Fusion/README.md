@@ -5,19 +5,21 @@ Online play for the heist with Photon Fusion 2. Host-authoritative, as planned i
 (kids, coat, disguise, observers, van, loot) and everyone else shows the host's state.
 
 Written by Jae; merged onto the current `master` code (which keeps the round
-outcome system) and extended. **Not compiled or run against Fusion yet.** The
-first Unity + Fusion compile is the real test.
+outcome system) and extended. Targets **Fusion 2.1**: 2.0 differs in
+`OnReliableDataReceived` (`ArraySegment<byte>` instead of `ReadOnlySpan<byte>`).
+Compiling against Fusion 2.1 in the owner's editor; **not run online yet.**
 
 ## Setup
 
-1. Import the Photon Fusion 2 SDK. It is not committed: `Assets/Photon/` is in
+1. Import the Photon Fusion 2 SDK (2.1 or newer). It is not committed: `Assets/Photon/` is in
    `.gitignore`, so each person installs it themselves. It also holds the Photon
    App ID, and this repository is public.
 2. Enter the Photon App ID in Fusion's settings. Get it from the project owner in a
    private message. Never commit it.
-3. All network code is inside `#if FUSION2`. If the Fusion menu shows up but these
-   scripts don't, add `FUSION2` under Project Settings > Player > Scripting Define
-   Symbols. Without Fusion the project compiles and plays offline as before.
+3. All network code is inside `#if FUSION2`. Fusion 2.1 did not add that symbol by
+   itself here: add `FUSION2` under Project Settings > Player > Other Settings >
+   Scripting Define Symbols, then Apply. (No **Coat > Fusion** menu means it is
+   missing.) Without Fusion the project compiles and plays offline as before.
 4. In the Network Project Config, set **Tick Rate to 50**. The ragdoll is tuned at
    the project's fixed timestep of 0.02 s; the host logs a warning if they differ.
 5. Open `SampleScene`, run **Coat > Fusion > Setup Current Scene**, and save.

@@ -27,7 +27,7 @@ are four kids stacked in a trenchcoat trying to pass as one normal person.
 - **Around it:** main menu (Play / Settings / Shop / Quit), a random round picked at
   game start with a reveal reel, a cosmetics shop (empty), saved coins/settings.
 
-Online 4-player (Photon Fusion 2) is written but not yet compiled or run — see
+Online 4-player (Photon Fusion 2.1) is written and compiling, not yet run — see
 `Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
 keyboard (or gamepads).
 
