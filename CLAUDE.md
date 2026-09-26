@@ -248,6 +248,14 @@ Sqwad Look" / "The 4 Limbs Look")
   (Colours and toon shading were asked for; the models are unchanged.)
 - **Fusion 2 proxies don't run `FixedUpdateNetwork`.** Anything a client must show
   from the host's state goes in `Render()`.
+- **`NetworkButtons` needs an int-backed enum.** Its generic `Set`/`IsSet`/`WasPressed`
+  assert the underlying type is `int`; `CoatFusionButton : byte` threw every tick on
+  both sides (client input never sent). The error only shows with Fusion's debug DLL.
+- **Builds drop shader variants no shipped material uses.** `CoatSeeThrough` makes
+  transparent clones of opaque URP Lit materials at runtime; in a build they drew
+  solid until `Resources/CoatSeeThroughVariant.mat` (Lit, `_SURFACE_TYPE_TRANSPARENT`)
+  shipped the variant. Anything that flips keywords at runtime needs the same, and
+  must be checked in a build, not just the editor.
 - **`FindFirstObjectByType` skips switched-off objects.** The disguise and both
   observers are off whenever the coat isn't worn — get them from `CoatVehicle`.
 - **Never upload whole files through GitHub's website** on top of newer code. That

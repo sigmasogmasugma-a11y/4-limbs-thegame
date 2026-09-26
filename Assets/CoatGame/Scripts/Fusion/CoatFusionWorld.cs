@@ -524,6 +524,8 @@ namespace Coat.Fusion
         {
             if (Game != null && Game.Coat != null && Valid(CoatRotation))
                 Game.Coat.transform.SetPositionAndRotation(CoatPosition, CoatRotation);
+            if (Game != null && Game.Coat != null)
+                Game.Coat.ApplyNetworkAboard(LimbMask);
 
             int presence = (BodyUp ? 1 : 0) | (KidMask << 1);
             if (presence != _appliedPresence)
