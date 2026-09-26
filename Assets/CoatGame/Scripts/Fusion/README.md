@@ -28,7 +28,20 @@ second peer.**
 
 ## Playing
 
-- **F6** hosts, **F7** joins. Starting loads the open scene additively, as in Photon's
+- **From the main menu:** Play > **Create Lobby** reveals the round, loads the game
+  and hosts a session named after the 4-character lobby code, shown on the status
+  line (`lobby ABCD`). Friends type that code under Play and press **Join Lobby**.
+  A code with no game behind it sends the joiner back to the menu with the reason.
+  If the host cannot reach Photon, the game plays offline as before.
+- Esc back to the menu ends the session (`CoatLobby.Leaving` shuts the runner down
+  before the menu loads). A client whose host leaves is sent back to the menu and
+  told why.
+- Host and friends must be in the same Photon region. Fusion picks the best region
+  for each machine, so friends far apart can miss each other ("GameNotFound"): set
+  one **Fixed Region** in the Photon App Settings (Fusion's Realtime settings)
+  before building. It is per machine, since `Assets/Photon/` is not committed.
+- **In the game scene:** **F6** hosts, **F7** joins, with the session name set on
+  `CoatFusionRunner` (default `4Limbs`), for testing without the menu. Starting loads the open scene additively, as in Photon's
   Host Mode tutorial, so Fusion takes it over instead of reloading it. The status line at the bottom of the screen shows
   the session, the player count and your limb.
 - Limbs are dealt in join order: left leg, right leg, left arm, right arm.
@@ -85,7 +98,6 @@ second peer.**
 - The player rows in the in-coat HUD still list each limb's local keys, not the
   shared online controls.
 - The three grabbable props in the test level are not synced.
-- The main menu's Create/Join (`CoatLobby`) is not wired to Fusion yet; use F6/F7
-  in the game scene.
+- A joining client sees no round reveal; it plays the host's round when it arrives.
 - Cosmetics are not synced. The coat/head lock at round start is not written.
 - No host migration: if the host leaves, the session ends.

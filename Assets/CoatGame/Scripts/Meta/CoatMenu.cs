@@ -300,6 +300,14 @@ namespace Coat
             return on;
         }
 
+        /// Back from an online game that ended under us (the host left, no lobby
+        /// with that code): say why, on the page the menu opens on.
+        void Start()
+        {
+            string why = CoatLobby.TakeEndedReason();
+            if (!string.IsNullOrEmpty(why)) Say(why, true);
+        }
+
         void Say(string msg, bool bad = false)
         {
             _notice = msg;
@@ -350,7 +358,8 @@ namespace Coat
 
             GUI.Label(new Rect(Reference.x * 0.5f - 420, Reference.y - 166, 840, 50),
                       CoatLobby.Online
-                        ? "Online."
+                        ? "<b>Online.</b> Create Lobby hosts: your friends type its code here and " +
+                          "Join. Limbs nobody has joined for are played from your keyboard."
                         : "<b>Offline build.</b> Create Lobby starts the local game, all four " +
                           "on one keyboard. Joining needs Photon Fusion imported.", _sub);
             Notice();

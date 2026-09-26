@@ -87,13 +87,16 @@ All game code is under `Assets/CoatGame/`.
 **`Scripts/Fusion/` — online play** (all inside `#if FUSION2`; written by Jae, the
 networking collaborator, merged onto current `master`). `CoatFusionWorld` is the
 host's tick and the clients' copy of it; `CoatFusionInputProvider` sends input;
-`CoatFusionRunner` starts/joins (F6/F7); `CoatFusionHud` is the status line. Offline
+`CoatFusionRunner` starts/joins (from the menu's Create/Join via `CoatLobby.Pending`,
+or F6/F7 in the scene); `CoatFusionHud` is the status line. Offline
 loops are switched off through an `ExternalSimulation` flag on `CoatGame`, `CoatVan`,
 `ClassicRagdoll` and both observers. Its README has setup and what's missing.
 
 **`Scripts/Meta/` — everything around the game**
 - `CoatMenu` (IMGUI front end), `CoatSession` (self-spawning, applies settings, Esc →
-  menu), `CoatLobby` (Create/Join seam; `Open` draws the round, `StartGame` loads).
+  menu), `CoatLobby` (Create/Join seam; `Open` draws the round, `StartGame` loads;
+  no Photon in it — it sets `Pending` host/join and the lobby code, which is the
+  Fusion session name, and raises `Leaving` so the runner shuts down first).
 - `CoatProfile` / `CoatSave` (the save file), `CoatCosmetics` / `CoatShopStock`
   (catalogue), `CoatLoadout` (who wears what), `CoatCosmeticFitter` (hangs a
   cosmetic prefab on a bone).
@@ -290,8 +293,8 @@ Sqwad Look" / "The 4 Limbs Look")
   red, fps, each limb's player and input, and on a client, host updates per second.
   Next: two PCs over the internet, then 3-4 players.
   Fusion is never committed (`Assets/Photon/` is gitignored; the repo is public and
-  the SDK holds the owner's App ID). Not wired to the menu:
-  `CoatLobby.Online` is still false. F5 restart is off online.
+  the SDK holds the owner's App ID). The menu's Create/Join now host/join online
+  (written, not yet run). F5 restart is off online.
 - Coat/head host lock: agreed, not written. (The host-only observer is done, via
   `ExternalSimulation`, in both observers.)
 - Roles are pinned to seat index — nobody is ever dealt a different limb, so the

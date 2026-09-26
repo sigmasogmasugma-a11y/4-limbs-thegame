@@ -43,8 +43,10 @@ namespace Coat.Fusion
                 string ticks = host
                     ? $"   <color=#9a8fa8>tick {World.HostTicks}   {_fps:0} fps</color>"
                     : $"   <color=#9a8fa8>{_fps:0} fps   host updates {World.HostUpdatesPerSecond:0}/s</color>";
+                // The lobby code, for the host to read out to friends.
+                string lobby = Runner != null ? $"lobby <b>{Runner.SessionName}</b>   " : "";
                 GUI.Label(new Rect(14f, y, 1600f, 24f),
-                    $"<color=#8ce87a>ONLINE</color> ({(host ? "host" : "client")})   {World.PlayerCount}/4 players   {role}{ticks}", _style);
+                    $"<color=#8ce87a>ONLINE</color> ({(host ? "host" : "client")})   {lobby}{World.PlayerCount}/4 players   {role}{ticks}", _style);
 
                 if (host)
                     GUI.Label(new Rect(14f, y - 24f, 1800f, 24f), Limbs(), _style);

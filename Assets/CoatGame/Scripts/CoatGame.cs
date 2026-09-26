@@ -37,7 +37,12 @@ namespace Coat
             // game scene. CoatSession spawns itself before the first scene
             // loads, which makes it the wrong place to hang something that has
             // to happen exactly once per game.
-            if (CoatRounds.Current == null) CoatRounds.Begin(CoatSave.Current);
+            //
+            // Not when joining someone's lobby: the host's round arrives over
+            // the network, and drawing one here would record a round this
+            // player never plays in their history.
+            if (CoatRounds.Current == null && CoatLobby.Pending != LobbyStart.Join)
+                CoatRounds.Begin(CoatSave.Current);
             CoatSession.Apply();
         }
 

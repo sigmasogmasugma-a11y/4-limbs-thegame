@@ -5,29 +5,65 @@ namespace Coat
 {
     public enum LobbyState { Idle, Hosting, Joining, InGame, Failed }
 
-    /// The seam the menu talks to, so Create and Join are already routed
-    /// somewhere and swapping in Fusion later replaces the guts of one class
-    /// rather than rewriting the front end.
+    /// What the game scene should do about the network when it opens.
+    public enum LobbyStart { None, Host, Join }
+
+    /// The seam the menu talks to. Nothing here knows about Photon: it only
+    /// records what the game scene should do when it opens (Pending), and the
+    /// network runner in that scene does it. The lobby code is the Fusion
+    /// session name.
     ///
-    /// It is NOT online today. Photon Fusion is not imported -- it ships as a
-    /// .unitypackage from the Photon dashboard against an App ID -- so the
-    /// honest behaviour is: hosting starts the local four-on-one-keyboard game
-    /// that already exists, and joining somebody else's code refuses with a
-    /// reason instead of pretending to dial out.
+    /// Online (FUSION2 defined, Fusion imported): Create opens a lobby and the
+    /// game scene hosts it; Join loads the game scene and joins the session with
+    /// the typed code. Hosting with nobody else there is the local game as
+    /// before, with the host playing the empty limbs, and if Photon cannot be
+    /// reached the scene simply plays offline.
     ///
-    /// The agreed shape for when it lands (host-authoritative physics, input
-    /// replication, one peer simulating the body) is unaffected by any of this;
-    /// Create becomes StartGame(GameMode.Host) and Join becomes
-    /// StartGame(GameMode.Client) with the code as the session name.
+    /// Offline (no Fusion): Create starts the local four-on-one-keyboard game,
+    /// and Join refuses with a reason instead of pretending to dial out.
     public static class CoatLobby
     {
         public static LobbyState State { get; private set; } = LobbyState.Idle;
         public static string Code { get; private set; }
         public static string Message { get; private set; }
 
-        /// True once a real transport is in. Everything reading this should
-        /// degrade rather than branch on a build symbol.
-        public static bool Online => false;
+        /// True when Fusion is in. The one place that reads the build symbol;
+        /// everything else reads this.
+        public static bool Online =>
+#if FUSION2
+            true;
+#else
+            false;
+#endif
+
+        /// What the game scene should do with the network when it opens: host
+        /// the lobby just opened, join the one whose code was typed, or nothing
+        /// (offline, or Play pressed straight on the game scene). Taken once, by
+        /// the network runner in that scene.
+        public static LobbyStart Pending { get; private set; }
+
+        public static LobbyStart TakePending()
+        {
+            var p = Pending;
+            Pending = LobbyStart.None;
+            return p;
+        }
+
+        /// Raised when leaving the game for the menu, BEFORE the menu loads, so
+        /// an online session is closed while its scene still exists.
+        public static event System.Action Leaving;
+
+        /// Why the last online game ended under this player (the host left, the
+        /// code was wrong), for the menu to say once it is back.
+        static string _endedBecause;
+        public static void Ended(string why) => _endedBecause = why;
+
+        public static string TakeEndedReason()
+        {
+            var why = _endedBecause;
+            _endedBecause = null;
+            return why;
+        }
 
         public static string GameScene = "SampleScene";
 
@@ -36,6 +72,7 @@ namespace Coat
             State = LobbyState.Idle;
             Code = null;
             Message = null;
+            Pending = LobbyStart.None;
         }
 
         /// Four letters, no vowels, so no code ever reads as a word.
@@ -74,7 +111,7 @@ namespace Coat
             var round = CoatRounds.Begin(CoatSave.Current);
 
             Message = Online
-                ? "Lobby " + Code + " open."
+                ? "Lobby " + Code + " open. Friends join with that code."
                 : "Offline: all four on one keyboard. Online needs Photon Fusion imported.";
             if (round != null) Message = round.Name + " -- " + Message;
             return true;
@@ -83,7 +120,8 @@ namespace Coat
         /// Enter the game the lobby was opened for.
         public static bool StartGame(out string error)
         {
-            if (!LoadGame(out error)) { State = LobbyState.Failed; return false; }
+            Pending = Online ? LobbyStart.Host : LobbyStart.None;
+            if (!LoadGame(out error)) { State = LobbyState.Failed; Pending = LobbyStart.None; return false; }
             State = LobbyState.InGame;
             return true;
         }
@@ -113,13 +151,15 @@ namespace Coat
 
             Code = code;
             State = LobbyState.Joining;
-            if (!LoadGame(out error)) { State = LobbyState.Failed; return false; }
+            Pending = LobbyStart.Join;
+            if (!LoadGame(out error)) { State = LobbyState.Failed; Pending = LobbyStart.None; return false; }
             State = LobbyState.InGame;
             return true;
         }
 
         public static void Leave()
         {
+            Leaving?.Invoke();
             Reset();
         }
 

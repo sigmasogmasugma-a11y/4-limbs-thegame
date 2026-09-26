@@ -23,6 +23,10 @@ namespace Coat.Fusion
         static NetworkRunner s_runner;
         static bool s_starting;
         static string s_lastError;
+        static bool s_clientSession;
+
+        /// Started from the menu's Create/Join, not from F6/F7 in the scene.
+        bool _fromMenu;
 
         /// Every Play starts clean, even with domain reload switched off in the
         /// Enter Play Mode options, where statics survive from the last Play.
@@ -34,6 +38,7 @@ namespace Coat.Fusion
             s_runner = null;
             s_starting = false;
             s_lastError = null;
+            s_clientSession = false;
         }
 
         public NetworkRunner Runner => s_runner;
@@ -49,8 +54,48 @@ namespace Coat.Fusion
 
         async void Start()
         {
+            // Came from the menu: host the lobby it just opened, or join the one
+            // whose code was typed. The lobby code is the session name.
+            var pending = CoatLobby.TakePending();
+            if (pending != LobbyStart.None && !string.IsNullOrEmpty(CoatLobby.Code))
+            {
+                _fromMenu = true;
+                SessionName = CoatLobby.Code;
+                if (pending == LobbyStart.Host) await StartHost();
+                else await StartClient();
+                return;
+            }
+
             if (AutoStartHost) await StartHost();
             else if (AutoStartClient) await StartClient();
+        }
+
+        void OnEnable() => CoatLobby.Leaving += EndSession;
+        void OnDisable() => CoatLobby.Leaving -= EndSession;
+
+        /// Leaving the game scene ends the session. Normally CoatLobby.Leaving
+        /// has already done it, before the menu loaded; this is the safety net
+        /// for anything else that unloads the scene. The runner lives in
+        /// DontDestroyOnLoad and would otherwise stay connected from the menu.
+        void OnDestroy() => EndSession();
+
+        static void EndSession()
+        {
+            var runner = s_runner;
+            s_runner = null;
+            s_clientSession = false;
+            if (runner != null) _ = runner.Shutdown();
+        }
+
+        /// A client whose game went away (the host left, the connection dropped)
+        /// goes back to the menu and is told why, rather than being left in a
+        /// scene nobody drives any more.
+        void Update()
+        {
+            if (!s_clientSession || Running || Starting) return;
+            s_clientSession = false;
+            CoatLobby.Ended("The online game ended: the host left, or the connection dropped.");
+            CoatSession.ToMenu();
         }
 
         public Task<StartGameResult> StartHost() => StartGame(GameMode.Host);
@@ -107,9 +152,20 @@ namespace Coat.Fusion
                 // Throw the dead runner away so F6/F7 can simply be pressed again.
                 if (go != null) Destroy(go);
                 s_runner = null;
+
+                // A join typed in the menu that found nothing goes back there and
+                // says so. Not if this scene is already gone (Esc while
+                // connecting). A failed HOST stays: the scene plays offline.
+                if (_fromMenu && mode == GameMode.Client && this != null)
+                {
+                    CoatLobby.Ended($"Could not join lobby {SessionName} ({result.ShutdownReason}). " +
+                                    "Check the code, and that the host is in the game.");
+                    CoatSession.ToMenu();
+                }
             }
             else
             {
+                s_clientSession = mode == GameMode.Client;
                 Debug.Log($"[4 Limbs] Fusion session '{SessionName}' started as {mode}.");
             }
 
