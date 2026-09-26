@@ -78,6 +78,14 @@ namespace Coat
 
         public static void Clear() => Current = null;
 
+        /// Set the already-drawn round from an authoritative network result.
+        /// No new random draw occurs on clients.
+        public static void SetCurrent(string id)
+        {
+            Current = Find(id);
+        }
+
+
         // ---- weighting ---------------------------------------------------
 
         /// How many rounds ago this was last played. 0 is the round just gone,
