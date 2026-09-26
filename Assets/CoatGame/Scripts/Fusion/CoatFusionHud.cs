@@ -36,6 +36,16 @@ namespace Coat.Fusion
                 return;
             }
 
+            // Connected, but the game's network object never joined the session:
+            // the scene was not set up for Fusion, or not saved after it was.
+            if (Runner != null && Runner.Running)
+            {
+                GUI.Label(new Rect(14f, y, 1400f, 24f),
+                    "<color=#ffd24a>Connected, but the game did not join the session.</color>   " +
+                    "Stop Play, run Coat > Fusion > Setup Current Scene, save (Ctrl+S), try again.", _style);
+                return;
+            }
+
             if (Runner != null && Runner.Starting)
             {
                 GUI.Label(new Rect(14f, y, 900f, 24f),

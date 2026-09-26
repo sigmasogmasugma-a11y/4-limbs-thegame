@@ -26,7 +26,8 @@ Compiling against Fusion 2.1 in the owner's editor; **not run online yet.**
 
 ## Playing
 
-- **F6** hosts, **F7** joins. The status line at the bottom of the screen shows
+- **F6** hosts, **F7** joins. Starting loads the open scene additively, as in Photon's
+  Host Mode tutorial, so Fusion takes it over instead of reloading it. The status line at the bottom of the screen shows
   the session, the player count and your limb.
 - Limbs are dealt in join order: left leg, right leg, left arm, right arm.
 - Everyone uses the same controls on their own machine: **W A S D** to move,
