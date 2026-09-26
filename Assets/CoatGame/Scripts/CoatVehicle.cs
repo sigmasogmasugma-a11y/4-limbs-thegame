@@ -233,17 +233,32 @@ namespace Coat
 
         /// Both passers-by can be up at once: with a partial crew there is a disguise to
         /// squint at AND spare people stood next to it, and each is its own problem.
-        public void Apply()
-        {
-            if (WornObserver != null) WornObserver.SetActive(_worn);
-            if (LooseObserver != null) LooseObserver.SetActive(!_worn || AnyoneLoose());
+        public void Apply() => Present(_worn, AnyoneLoose());
 
-            if (LooseHud != null) LooseHud.enabled = !_worn;
-            if (WornHud != null) WornHud.enabled = _worn;
+        /// Online, on a client: nothing here simulates. The host decides who is
+        /// aboard and the network layer switches the body and the kids on and off
+        /// to match; this swaps the observers, HUDs and camera to suit, exactly as
+        /// Apply does offline. anyoneLoose comes from the host too, since a
+        /// client's TheCoat never learns who climbed in.
+        public void ApplyNetworkState(bool worn, bool anyoneLoose)
+        {
+            _worn = worn;
+            _mask = -1;
+            Present(worn, anyoneLoose);
+            Drape();
+        }
+
+        void Present(bool worn, bool anyoneLoose)
+        {
+            if (WornObserver != null) WornObserver.SetActive(worn);
+            if (LooseObserver != null) LooseObserver.SetActive(!worn || anyoneLoose);
+
+            if (LooseHud != null) LooseHud.enabled = !worn;
+            if (WornHud != null) WornHud.enabled = worn;
 
             if (Cam == null) return;
-            Cam.Game = _worn ? null : Game;
-            Cam.Fallback = _worn && Body != null ? Body.Torso.transform
+            Cam.Game = worn ? null : Game;
+            Cam.Fallback = worn && Body != null ? Body.Torso.transform
                          : Coat != null ? Coat.transform
                          : Cam.Fallback;
         }

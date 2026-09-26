@@ -14,6 +14,10 @@ namespace Coat
         public CoatLoot Loot;
         public Transform CameraRef;
 
+        /// Set by the Fusion world to prevent the local FixedUpdate simulation from
+        /// running alongside FixedUpdateNetwork.
+        public bool ExternalSimulation;
+
         void Awake()
         {
             if (Input == null) Input = GetComponent<LocalCoatInput>();
@@ -39,6 +43,7 @@ namespace Coat
 
         void FixedUpdate()
         {
+            if (ExternalSimulation) return;
             Tick(Time.fixedDeltaTime);
         }
 

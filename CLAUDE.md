@@ -27,8 +27,9 @@ are four kids stacked in a trenchcoat trying to pass as one normal person.
 - **Around it:** main menu (Play / Settings / Shop / Quit), a random round picked at
   game start with a reveal reel, a cosmetics shop (empty), saved coins/settings.
 
-Online 4-player (Photon Fusion) is designed but not built — today it is four players
-on one keyboard (or gamepads).
+Online 4-player (Photon Fusion 2) is written but not yet compiled or run — see
+`Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
+keyboard (or gamepads).
 
 ### Controls
 
@@ -78,6 +79,13 @@ All game code is under `Assets/CoatGame/`.
   networked input.
 - `CoatTypes` — `CoatRole` (`LeftLeg=0, RightLeg=1, LeftArm=2, RightArm=3`); most
   per-player arrays are indexed by `(int)role`.
+
+**`Scripts/Fusion/` — online play** (all inside `#if FUSION2`; written by Jae, the
+networking collaborator, merged onto current `master`). `CoatFusionWorld` is the
+host's tick and the clients' copy of it; `CoatFusionInputProvider` sends input;
+`CoatFusionRunner` starts/joins (F6/F7); `CoatFusionHud` is the status line. Offline
+loops are switched off through an `ExternalSimulation` flag on `CoatGame`, `CoatVan`,
+`ClassicRagdoll` and both observers. Its README has setup and what's missing.
 
 **`Scripts/Meta/` — everything around the game**
 - `CoatMenu` (IMGUI front end), `CoatSession` (self-spawning, applies settings, Esc →
@@ -169,6 +177,14 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
   ids. Coat/head: local for the lobby preview only; the host resolves and **locks**
   them at round start. The round outcome is host-settled too (not yet reviewed by
   rickleo).
+- As built: the host ticks the game in `FixedUpdateNetwork` and then steps physics
+  itself (`simulationMode = Script`) to keep offline's input → logic → physics order;
+  Fusion's Tick Rate must be 50 to match the 0.02 s the ragdoll is tuned at. The host
+  sends every synced body's full state (~76 bodies), not the root + IK targets above —
+  a first version; move to the plan if bandwidth hurts. Clients settle the host's
+  result numbers locally (`CoatVan.ApplyNetworkResult`) so each is paid into their
+  own save; `CoatSave` can only write the local file. Online, everyone plays on
+  control set 0 (W A S D / first gamepad); the role only says where the host files it.
 
 ## Traps (read these)
 
@@ -205,6 +221,13 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
 - **Measure the defect before fixing it.** A hand "membrane" was once cut away that
   didn't exist and wrecked the model. Only touch what was flagged.
 - **Don't change the characters' appearance** (the disguise, the kids) unless asked.
+- **Fusion 2 proxies don't run `FixedUpdateNetwork`.** Anything a client must show
+  from the host's state goes in `Render()`.
+- **`FindFirstObjectByType` skips switched-off objects.** The disguise and both
+  observers are off whenever the coat isn't worn — get them from `CoatVehicle`.
+- **Never upload whole files through GitHub's website** on top of newer code. That
+  once put back old copies of `CoatVan` and both observers and deleted the round
+  outcome. Pull `master` first, change it, push with git.
 
 ## Status
 
@@ -219,9 +242,12 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
 - Shop rules and cosmetic resolution (48 checks), round draw + reveal reel (30 checks).
 
 **Half-done**
-- Online: none built. Fusion is **not imported** (needs the owner's Photon account /
-  App ID). `CoatLobby.Online` is false; Join refuses by design.
-- `IsHost` guard in both observers and the coat/head host lock: agreed, not written.
+- Online: written (`Scripts/Fusion/`), never compiled or run. Fusion 2 is **not
+  imported** and never committed (`Assets/Photon/` is gitignored; the repo is public
+  and the SDK holds the owner's App ID). Not wired to the menu: `CoatLobby.Online` is
+  still false; use F6/F7 in the game scene. F5 restart is off online.
+- Coat/head host lock: agreed, not written. (The host-only observer is done, via
+  `ExternalSimulation`, in both observers.)
 - Roles are pinned to seat index — nobody is ever dealt a different limb, so the
   per-limb cosmetic rule is inert. `CoatLoadout.Leader` is hard-coded to seat 0;
   whatever deals roles must set it.
@@ -250,10 +276,10 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
    for the coat and crew but not the body's limbs (step timers, drive targets,
    planted feet). Unverified guess.
 2. **Milestone 1:** the current heist fully playable online with 4 players, plus a
-   proper win/lose (win/lose now done). Ragdoll-over-network first — it's the
-   biggest unknown. No new rounds until online feels right. Blocked on Fusion import.
-3. Small networking prep that doesn't need Fusion: the `IsHost` guard (true offline)
-   and the coat/head lock at round start.
+   proper win/lose (win/lose now done). The code is written; next is the first
+   compile with Fusion 2 imported, then a real 2-4 player test. No new rounds until
+   online feels right.
+3. The coat/head lock at round start, and F5 restart online.
 4. Role dealing — matters once each player has their own profile online; must set
    `CoatLoadout.Leader`.
 5. Rounds, one at a time after online: parkour, horror house escape, fast food
