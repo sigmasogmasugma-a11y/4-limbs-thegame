@@ -85,6 +85,10 @@ namespace Coat.Fusion
         [Networked] public Vector3 LootVelocity { get; private set; }
         [Networked] public Vector3 LootAngularVelocity { get; private set; }
 
+        /// Which host tick the poses above are from. Clients move between the poses
+        /// of two stamps rather than jumping to each one as it lands.
+        [Networked] public int StateStamp { get; private set; }
+
         readonly List<Rigidbody> _bodies = new(MaxBodies);
         readonly CoatInputState[] _states = new CoatInputState[4];
         readonly NetworkButtons[] _previousButtons = new NetworkButtons[4];
@@ -483,6 +487,7 @@ namespace Coat.Fusion
 
         void CaptureState()
         {
+            StateStamp = HostTicks;
             for (int i = 0; i < _bodies.Count; i++)
             {
                 var rb = _bodies[i];
@@ -513,7 +518,6 @@ namespace Coat.Fusion
 
             ApplyPresence();
             ApplyState();
-            ApplyLootState();
             ApplyObserverState();
             ApplyVanState();
         }
@@ -522,8 +526,6 @@ namespace Coat.Fusion
         /// kids, and which observers and HUDs are up. Only touched when it changes.
         void ApplyPresence()
         {
-            if (Game != null && Game.Coat != null && Valid(CoatRotation))
-                Game.Coat.transform.SetPositionAndRotation(CoatPosition, CoatRotation);
             if (Game != null && Game.Coat != null)
                 Game.Coat.ApplyNetworkAboard(LimbMask);
 
@@ -531,6 +533,7 @@ namespace Coat.Fusion
             if (presence != _appliedPresence)
             {
                 _appliedPresence = presence;
+                _snapNext = true;   // kids popping in or out of the coat jump, not slide
 
                 if (Ragdoll != null && Ragdoll.gameObject.activeSelf != BodyUp)
                     Ragdoll.gameObject.SetActive(BodyUp);
@@ -592,36 +595,131 @@ namespace Coat.Fusion
                 van.ApplyNetworkResult(RoundResult == 2, ResultFumbles, ResultPeak, ResultSeconds);
         }
 
-        void ApplyLootState()
-        {
-            var loot = Game != null ? Game.Loot : null;
-            if (loot == null || loot.Body == null || !Valid(LootRotation)) return;
-            loot.Body.position = LootPosition;
-            loot.Body.rotation = LootRotation;
-            if (!loot.Body.isKinematic)
-            {
-                loot.Body.linearVelocity = LootVelocity;
-                loot.Body.angularVelocity = LootAngularVelocity;
-            }
-        }
+        // Smoothing. The host sends its poses a few dozen times a second (the
+        // Server Send Rate), and placing each body straight onto them drew every
+        // client at that rate, however fast it rendered: the build looked like it
+        // ran at 25 fps. On the host, Unity's rigidbody interpolation hides the
+        // same thing. So each client moves every body from where it is drawn now
+        // to the host's newest pose, over the time the host took to produce it.
+        // One slot per synced body, then the loot, then the coat.
+
+        Vector3[] _fromPos = Array.Empty<Vector3>(), _toPos = Array.Empty<Vector3>();
+        Quaternion[] _fromRot = Array.Empty<Quaternion>(), _toRot = Array.Empty<Quaternion>();
+        bool[] _hasPose = Array.Empty<bool>();
+        int _stamp = -1;
+        bool _snapNext;
+        float _arrivedAt, _span;
+        int _arrivals;
+        float _countingSince;
+
+        /// Further than this between two host poses is a teleport, not movement:
+        /// drawn as a jump rather than a slide across the level.
+        const float SnapDistance = 1.5f;
+
+        int LootSlot => _bodies.Count;
+        int CoatSlot => _bodies.Count + 1;
+
+        /// Client only: how many fresh states from the host arrive per second.
+        public float HostUpdatesPerSecond { get; private set; }
 
         void ApplyState()
         {
+            int slots = _bodies.Count + 2;
+            if (_toPos.Length != slots)
+            {
+                _fromPos = new Vector3[slots];
+                _toPos = new Vector3[slots];
+                _fromRot = new Quaternion[slots];
+                _toRot = new Quaternion[slots];
+                _hasPose = new bool[slots];
+                _stamp = -1;
+            }
+
+            var loot = Game != null ? Game.Loot : null;
+            var lootBody = loot != null ? loot.Body : null;
+            var coat = Game != null && Game.Coat != null ? Game.Coat.transform : null;
+
+            // Switched on and off with the host straight away. A body that has just
+            // come on starts where the host has it, not where it was switched off.
             for (int i = 0; i < _bodies.Count; i++)
             {
                 var rb = _bodies[i];
                 if (rb == null) continue;
-
                 var state = Bodies.Get(i);
-                bool active = state.Active;
-                if (rb.gameObject.activeSelf != active) rb.gameObject.SetActive(active);
-                if (!active) continue;
+                if (rb.gameObject.activeSelf == state.Active) continue;
+                rb.gameObject.SetActive(state.Active);
+                Retarget(i, rb.transform, state.Position, state.Rotation, true);
+            }
 
-                // Proxy bodies are kinematic, so they are placed rather than pushed.
-                // Setting a velocity on a kinematic body only earns a warning.
-                if (!Valid(state.Rotation)) continue;
-                rb.position = state.Position;
-                rb.rotation = state.Rotation;
+            int stamp = StateStamp;
+            if (stamp != _stamp || _snapNext)
+            {
+                bool snap = _snapNext || _stamp < 0;
+                _span = Mathf.Clamp(stamp - _stamp, 1, 25) * Runner.DeltaTime;
+                _stamp = stamp;
+                _snapNext = false;
+                _arrivedAt = Time.unscaledTime;
+                _arrivals++;
+
+                for (int i = 0; i < _bodies.Count; i++)
+                {
+                    var rb = _bodies[i];
+                    if (rb == null) continue;
+                    var state = Bodies.Get(i);
+                    Retarget(i, rb.transform, state.Position, state.Rotation, snap);
+                }
+                if (lootBody != null) Retarget(LootSlot, lootBody.transform, LootPosition, LootRotation, snap);
+                if (coat != null) Retarget(CoatSlot, coat, CoatPosition, CoatRotation, snap);
+            }
+
+            float t = Mathf.Clamp01((Time.unscaledTime - _arrivedAt) / Mathf.Max(_span, 0.001f));
+
+            // The coat first: it carries its hub, which is one of the bodies.
+            if (coat != null) Place(CoatSlot, coat, null, t);
+            for (int i = 0; i < _bodies.Count; i++)
+            {
+                var rb = _bodies[i];
+                if (rb != null && rb.gameObject.activeSelf) Place(i, rb.transform, rb, t);
+            }
+            if (lootBody != null) Place(LootSlot, lootBody.transform, lootBody, t);
+
+            float counted = Time.unscaledTime - _countingSince;
+            if (counted >= 1f)
+            {
+                HostUpdatesPerSecond = _arrivals / counted;
+                _arrivals = 0;
+                _countingSince = Time.unscaledTime;
+            }
+        }
+
+        /// A new pose from the host: move to it from wherever this is drawn now, so
+        /// nothing jumps when a state lands early or late.
+        void Retarget(int slot, Transform shown, Vector3 position, Quaternion rotation, bool snap)
+        {
+            if (!Valid(rotation)) { _hasPose[slot] = false; return; }
+
+            bool jump = snap || !_hasPose[slot]
+                     || (position - shown.position).sqrMagnitude > SnapDistance * SnapDistance;
+            _fromPos[slot] = jump ? position : shown.position;
+            _fromRot[slot] = jump ? rotation : shown.rotation;
+            _toPos[slot] = position;
+            _toRot[slot] = rotation;
+            _hasPose[slot] = true;
+        }
+
+        /// Drawn at t between the two poses. The rigidbody is set as well as the
+        /// transform, so anything reading Rigidbody.position (the camera does)
+        /// sees the same place.
+        void Place(int slot, Transform shown, Rigidbody rb, float t)
+        {
+            if (!_hasPose[slot]) return;
+            var p = Vector3.Lerp(_fromPos[slot], _toPos[slot], t);
+            var r = Quaternion.Slerp(_fromRot[slot], _toRot[slot], t);
+            shown.SetPositionAndRotation(p, r);
+            if (rb != null)
+            {
+                rb.position = p;
+                rb.rotation = r;
             }
         }
 
@@ -631,7 +729,9 @@ namespace Coat.Fusion
 
         /// Clients never simulate: every synced body, and the loot, is placed from
         /// the host's state. Velocities are cleared BEFORE going kinematic, since
-        /// Unity refuses velocity on a kinematic body.
+        /// Unity refuses velocity on a kinematic body. Rigidbody interpolation is
+        /// switched off: ApplyState smooths these itself, every frame, and Unity's
+        /// interpolation would fight it for the transform.
         void MakeProxyPhysics()
         {
             if (_proxyPhysics) return;
@@ -646,7 +746,9 @@ namespace Coat.Fusion
 
         static void MakeKinematic(Rigidbody rb)
         {
-            if (rb == null || rb.isKinematic) return;
+            if (rb == null) return;
+            rb.interpolation = RigidbodyInterpolation.None;
+            if (rb.isKinematic) return;
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
             rb.isKinematic = true;

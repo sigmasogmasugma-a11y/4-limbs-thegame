@@ -59,6 +59,12 @@ second peer.**
 - Clients simulate nothing. `CoatFusionWorld.Render` copies the host's state every
   frame: bodies are kinematic and placed, the vehicle swaps observers, HUDs and
   camera from the host's "worn" state, and the van shows the host's clock and door.
+- Host states arrive at the Server Send Rate (25 a second here), so a client moves
+  each body, the loot and the coat from where it is drawn to the newest host pose
+  over the time between the two (`StateStamp` says which tick a pose is from).
+  Placed straight onto each pose, the client looked like it ran at 25 fps. A jump
+  of more than 1.5 m, or anyone climbing in or out, is drawn as a jump. The status
+  line shows fps, and on a client, host updates per second.
 - The round result is `CoatVan`'s, settled by `CoatRoundResult` on the host as
   offline (EverRumbled, never Rumbled). Each client settles the same numbers
   locally with `CoatVan.ApplyNetworkResult`, so every player sees the same GOT

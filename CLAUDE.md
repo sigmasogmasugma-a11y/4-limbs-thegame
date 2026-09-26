@@ -201,6 +201,8 @@ Sqwad Look" / "The 4 Limbs Look")
   Fusion's Tick Rate must be 50 to match the 0.02 s the ragdoll is tuned at. The host
   reads its own limb straight off its keyboard (through Fusion's input it never
   moved; cause unknown, so watch remote players' "input ok" on the status line).
+  Clients smooth each body between host states (`StateStamp`); placed straight onto
+  them, the client moved at the send rate (25/s) and looked laggy next to the host.
   The host sends every synced body's full state (~76 bodies), not the root + IK targets above —
   a first version; move to the plan if bandwidth hurts. Clients settle the host's
   result numbers locally (`CoatVan.ApplyNetworkResult`) so each is paid into their
