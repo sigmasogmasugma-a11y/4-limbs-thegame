@@ -103,6 +103,12 @@ namespace Coat.Fusion
         public int LocalRoleIndex => _localRole;
         public bool IsHostAuthority => Object != null && Object.HasStateAuthority;
 
+        /// Network ticks the host has run, and the last thing that went wrong in
+        /// one. Both go on the status line: the game is tested from screenshots of
+        /// the Game view, where the Console is not.
+        public int HostTicks { get; private set; }
+        public string LastError { get; private set; }
+
         void Awake()
         {
             ResolveReferences();
@@ -275,14 +281,28 @@ namespace Coat.Fusion
         public override void FixedUpdateNetwork()
         {
             if (!Object.HasStateAuthority) return;
+            HostTicks++;
 
-            ResolveReferences();
-            BuildBodyList();
-            ReconcileRoles();
-            RefreshLocalRole();
+            try
+            {
+                ResolveReferences();
+                BuildBodyList();
+                ReconcileRoles();
+                RefreshLocalRole();
 
-            SimulateAuthority();
-            CaptureState();
+                SimulateAuthority();
+                CaptureState();
+            }
+            catch (Exception e)
+            {
+                // Logged once per kind rather than fifty times a second.
+                string what = e.GetType().Name + ": " + e.Message;
+                if (what != LastError)
+                {
+                    LastError = what;
+                    Debug.LogException(e);
+                }
+            }
         }
 
         void SimulateAuthority()
@@ -293,7 +313,7 @@ namespace Coat.Fusion
             for (int role = 0; role < 4; role++)
             {
                 PlayerRef player = RolePlayers.Get(role);
-                if (!player.IsValid)
+                if (!Connected(player))
                 {
                     FromHostKeyboard(role);
                     continue;
@@ -318,8 +338,8 @@ namespace Coat.Fusion
             {
                 var oldStates = Game.Input.States;
                 Game.Input.States = _states;
-                Game.Tick(dt);
-                Game.Input.States = oldStates;
+                try { Game.Tick(dt); }
+                finally { Game.Input.States = oldStates; }
             }
             else if (Game != null)
             {
@@ -607,28 +627,55 @@ namespace Coat.Fusion
                 if (RolePlayers.Get(i) == Runner.LocalPlayer) { _localRole = i; break; }
         }
 
+        /// Whether this player is in the session right now, and the only test for
+        /// a taken limb. Fusion 2 retired PlayerRef.IsValid (IsRealPlayer replaced
+        /// it), so it is not trusted to say whether a slot is empty: an empty slot
+        /// read as taken deals nobody a limb and sends nobody's input anywhere.
+        bool Connected(PlayerRef player)
+        {
+            if (player == PlayerRef.None || Runner == null) return false;
+            foreach (var active in Runner.ActivePlayers)
+                if (active == player) return true;
+            return false;
+        }
+
+        /// Whether a limb is being played by someone in the session. False means
+        /// the host's own keyboard plays it.
+        public bool RoleTaken(int role) => role >= 0 && role < 4 && Connected(RolePlayers.Get(role));
+
+        int RoleOf(PlayerRef player)
+        {
+            for (int i = 0; i < 4; i++)
+                if (RolePlayers.Get(i) == player) return i;
+            return -1;
+        }
+
         /// Every connected player has a limb and every limb's player is still
         /// connected, checked every tick rather than trusted to join/leave events.
         /// On the host its own player joins before this object spawns, so neither
-        /// Spawned's sweep nor OnPlayerJoined ever saw it: "0/4, waiting for a
-        /// limb", and its input went nowhere.
+        /// Spawned's sweep nor OnPlayerJoined ever saw it.
         void ReconcileRoles()
         {
             for (int i = 0; i < 4; i++)
             {
                 var p = RolePlayers.Get(i);
-                if (!p.IsValid) continue;
-                bool here = false;
-                foreach (var a in Runner.ActivePlayers) if (a == p) { here = true; break; }
-                if (!here) RemoveRole(p);
+                if (p != PlayerRef.None && !Connected(p)) ClearRole(i);
             }
 
             foreach (var a in Runner.ActivePlayers)
-            {
-                bool has = false;
-                for (int i = 0; i < 4; i++) if (RolePlayers.Get(i) == a) { has = true; break; }
-                if (!has) AssignRole(a);
-            }
+                if (RoleOf(a) < 0) AssignRole(a);
+
+            CountPlayers();
+        }
+
+        /// Counted from the limbs every time, never added to or taken from, so it
+        /// cannot drift from who is actually playing.
+        void CountPlayers()
+        {
+            int count = 0;
+            for (int i = 0; i < 4; i++)
+                if (Connected(RolePlayers.Get(i))) count++;
+            if (PlayerCount != count) PlayerCount = count;
         }
 
         /// A limb nobody has joined for is played from the host's own keyboard
@@ -656,12 +703,20 @@ namespace Coat.Fusion
 
         void AssignRole(PlayerRef player)
         {
-            if (!Object.HasStateAuthority || PlayerCount >= Mathf.Min(PlayerLimit, 4)) return;
+            if (!Object.HasStateAuthority || !Connected(player) || RoleOf(player) >= 0) return;
+
+            int taken = 0;
+            for (int i = 0; i < 4; i++)
+                if (RoleTaken(i)) taken++;
+            if (taken >= Mathf.Clamp(PlayerLimit, 1, 4)) return;
+
             for (int i = 0; i < 4; i++)
             {
-                if (RolePlayers.Get(i).IsValid) continue;
+                if (RoleTaken(i)) continue;
                 RolePlayers.Set(i, player);
-                PlayerCount++;
+                _previousButtons[i] = default;
+                CountPlayers();
+                Debug.Log($"[4 Limbs] {player} plays the {RoleName(i)}.");
                 return;
             }
         }
@@ -669,15 +724,25 @@ namespace Coat.Fusion
         void RemoveRole(PlayerRef player)
         {
             if (!Object.HasStateAuthority) return;
-            for (int i = 0; i < 4; i++)
-            {
-                if (RolePlayers.Get(i) != player) continue;
-                RolePlayers.Set(i, PlayerRef.None);
-                PlayerCount = Mathf.Max(0, PlayerCount - 1);
-                _previousButtons[i] = default;
-                return;
-            }
+            int role = RoleOf(player);
+            if (role >= 0) ClearRole(role);
+            CountPlayers();
         }
+
+        void ClearRole(int role)
+        {
+            RolePlayers.Set(role, PlayerRef.None);
+            _previousButtons[role] = default;
+        }
+
+        public static string RoleName(int role) => role switch
+        {
+            (int)CoatRole.LeftLeg => "left leg",
+            (int)CoatRole.RightLeg => "right leg",
+            (int)CoatRole.LeftArm => "left arm",
+            (int)CoatRole.RightArm => "right arm",
+            _ => "nothing"
+        };
 
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
         {

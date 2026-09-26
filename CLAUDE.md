@@ -265,13 +265,14 @@ Sqwad Look" / "The 4 Limbs Look")
 - Shop rules and cosmetic resolution (48 checks), round draw + reveal reel (30 checks).
 
 **Half-done**
-- Frog Sqwad palette + toon shading (`CoatPalette`, `Coat/Toon`, `Coat/Sky`): written,
-  **not yet seen in Unity**. The first open is the test: characters in candy colours
-  with plum outlines, a violet van, a striped kerb, a cyan sky.
-- Online: written (`Scripts/Fusion/`), never compiled or run. Fusion 2 is **not
-  imported** and never committed (`Assets/Photon/` is gitignored; the repo is public
-  and the SDK holds the owner's App ID). Not wired to the menu: `CoatLobby.Online` is
-  still false; use F6/F7 in the game scene. F5 restart is off online.
+- Frog Sqwad palette + toon shading (`CoatPalette`, `Coat/Toon`, `Coat/Sky`): in the
+  owner's editor, not yet judged against Frog Sqwad side by side.
+- Online (`Scripts/Fusion/`): compiles against Fusion 2.1.3 in the owner's editor, and
+  F6 hosts. Getting the host dealt a limb and moving is the current fix (the status
+  line counts host ticks and shows tick errors in red); a second peer (F7) has never
+  joined. Fusion is never committed (`Assets/Photon/` is gitignored; the repo is
+  public and the SDK holds the owner's App ID). Not wired to the menu:
+  `CoatLobby.Online` is still false. F5 restart is off online.
 - Coat/head host lock: agreed, not written. (The host-only observer is done, via
   `ExternalSimulation`, in both observers.)
 - Roles are pinned to seat index — nobody is ever dealt a different limb, so the

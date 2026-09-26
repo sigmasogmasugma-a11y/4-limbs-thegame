@@ -7,7 +7,8 @@ Online play for the heist with Photon Fusion 2. Host-authoritative, as planned i
 Written by Jae; merged onto the current `master` code (which keeps the round
 outcome system) and extended. Targets **Fusion 2.1**: 2.0 differs in
 `OnReliableDataReceived` (`ArraySegment<byte>` instead of `ReadOnlySpan<byte>`).
-Compiling against Fusion 2.1 in the owner's editor; **not run online yet.**
+Compiles against Fusion 2.1 and hosts in the owner's editor; **not yet played with a
+second peer.**
 
 ## Setup
 
@@ -30,6 +31,11 @@ Compiling against Fusion 2.1 in the owner's editor; **not run online yet.**
   Host Mode tutorial, so Fusion takes it over instead of reloading it. The status line at the bottom of the screen shows
   the session, the player count and your limb.
 - Limbs are dealt in join order: left leg, right leg, left arm, right arm.
+- A limb nobody has joined for is played from the host's keyboard with its offline
+  keys (I J K L, T F G H, P ; / '), so one person can test online alone. The line
+  above the status line lists them.
+- The host's status line counts network ticks. If it stays at 0, the game is not
+  being run at all. An exception in the host's tick is shown in red above it.
 - Everyone uses the same controls on their own machine: **W A S D** to move,
   **Left Shift** for grab/brace, **Q** to climb in or out of the coat (or the first
   gamepad).

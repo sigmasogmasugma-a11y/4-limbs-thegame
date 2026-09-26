@@ -27,12 +27,28 @@ namespace Coat.Fusion
 
             if (World != null && World.Runner != null && World.Runner.IsRunning)
             {
-                string who = World.IsHostAuthority ? "host" : "client";
+                bool host = World.IsHostAuthority;
                 string role = World.LocalRoleIndex < 0
                     ? "waiting for a limb"
-                    : $"you are the <b>{RoleName(World.LocalRoleIndex)}</b>   (W A S D, Left Shift, Q)";
-                GUI.Label(new Rect(14f, y, 900f, 24f),
-                    $"<color=#8ce87a>ONLINE</color> ({who})   {World.PlayerCount}/4 players   {role}", _style);
+                    : $"you are the <b>{CoatFusionWorld.RoleName(World.LocalRoleIndex)}</b>   (W A S D, Left Shift, Q)";
+
+                // The tick count says the host's game is running at all; if it
+                // sits at 0, nothing can move whatever the keys do.
+                string ticks = host ? $"   <color=#9a8fa8>tick {World.HostTicks}</color>" : "";
+                GUI.Label(new Rect(14f, y, 1600f, 24f),
+                    $"<color=#8ce87a>ONLINE</color> ({(host ? "host" : "client")})   {World.PlayerCount}/4 players   {role}{ticks}", _style);
+
+                if (host)
+                {
+                    string spare = SpareLimbs();
+                    if (spare.Length > 0)
+                        GUI.Label(new Rect(14f, y - 24f, 1600f, 24f),
+                            "<color=#9a8fa8>limbs nobody has joined for are yours too:</color>   " + spare, _style);
+                }
+
+                if (!string.IsNullOrEmpty(World.LastError))
+                    GUI.Label(new Rect(14f, y - 48f, 1600f, 24f),
+                        "<color=#ff5b5b>error: " + World.LastError + "</color>", _style);
                 return;
             }
 
@@ -68,14 +84,20 @@ namespace Coat.Fusion
             if (Keyboard.current.f7Key.wasPressedThisFrame) _ = Runner.StartClient();
         }
 
-        static string RoleName(int role) => role switch
+        /// The limbs the host's own keyboard is playing, with their offline keys,
+        /// read from the live bindings so the two cannot drift apart.
+        string SpareLimbs()
         {
-            (int)CoatRole.LeftLeg => "left leg",
-            (int)CoatRole.RightLeg => "right leg",
-            (int)CoatRole.LeftArm => "left arm",
-            (int)CoatRole.RightArm => "right arm",
-            _ => "waiting"
-        };
+            var input = World.LocalInput;
+            string list = "";
+            for (int i = 0; i < 4; i++)
+            {
+                if (World.RoleTaken(i)) continue;
+                string keys = input != null ? input.Describe(i) : "its usual keys";
+                list += (list.Length > 0 ? "   |   " : "") + CoatFusionWorld.RoleName(i) + " " + keys;
+            }
+            return list;
+        }
     }
 }
 #endif
