@@ -88,6 +88,8 @@ namespace Coat.Fusion
         readonly List<Rigidbody> _bodies = new(MaxBodies);
         readonly CoatInputState[] _states = new CoatInputState[4];
         readonly NetworkButtons[] _previousButtons = new NetworkButtons[4];
+        readonly bool[] _localActionWas = new bool[4];
+        readonly bool[] _localCoatWas = new bool[4];
         bool _built;
         bool _callbacksAdded;
         bool _proxyPhysics;
@@ -276,6 +278,7 @@ namespace Coat.Fusion
 
             ResolveReferences();
             BuildBodyList();
+            ReconcileRoles();
             RefreshLocalRole();
 
             SimulateAuthority();
@@ -290,7 +293,12 @@ namespace Coat.Fusion
             for (int role = 0; role < 4; role++)
             {
                 PlayerRef player = RolePlayers.Get(role);
-                if (!player.IsValid) continue;
+                if (!player.IsValid)
+                {
+                    FromHostKeyboard(role);
+                    continue;
+                }
+                _localActionWas[role] = _localCoatWas[role] = false;
 
                 if (Runner.TryGetInputForPlayer<CoatFusionInput>(player, out var input))
                 {
@@ -597,6 +605,53 @@ namespace Coat.Fusion
             _localRole = -1;
             for (int i = 0; i < 4; i++)
                 if (RolePlayers.Get(i) == Runner.LocalPlayer) { _localRole = i; break; }
+        }
+
+        /// Every connected player has a limb and every limb's player is still
+        /// connected, checked every tick rather than trusted to join/leave events.
+        /// On the host its own player joins before this object spawns, so neither
+        /// Spawned's sweep nor OnPlayerJoined ever saw it: "0/4, waiting for a
+        /// limb", and its input went nowhere.
+        void ReconcileRoles()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                var p = RolePlayers.Get(i);
+                if (!p.IsValid) continue;
+                bool here = false;
+                foreach (var a in Runner.ActivePlayers) if (a == p) { here = true; break; }
+                if (!here) RemoveRole(p);
+            }
+
+            foreach (var a in Runner.ActivePlayers)
+            {
+                bool has = false;
+                for (int i = 0; i < 4; i++) if (RolePlayers.Get(i) == a) { has = true; break; }
+                if (!has) AssignRole(a);
+            }
+        }
+
+        /// A limb nobody has joined for is played from the host's own keyboard
+        /// with its offline keys (I J K L, T F G H, P ; / '), so one person can
+        /// test online alone exactly as offline, and a crew short of four can
+        /// still get everyone into the coat.
+        ///
+        /// Press edges are worked out here, once per network tick, from the held
+        /// keys: LocalCoatInput's own edges are per rendered frame, and a tick can
+        /// run zero or two times in a frame, which would drop or double a climb-in.
+        void FromHostKeyboard(int role)
+        {
+            var local = LocalInput != null ? LocalInput.States : null;
+            if (local == null || role >= local.Length) return;
+
+            var k = local[role];
+            _states[role].Move = Vector2.ClampMagnitude(k.Move, 1f);
+            _states[role].Action = k.Action;
+            _states[role].ActionDown = k.Action && !_localActionWas[role];
+            _states[role].Coat = k.Coat;
+            _states[role].CoatDown = k.Coat && !_localCoatWas[role];
+            _localActionWas[role] = k.Action;
+            _localCoatWas[role] = k.Coat;
         }
 
         void AssignRole(PlayerRef player)
