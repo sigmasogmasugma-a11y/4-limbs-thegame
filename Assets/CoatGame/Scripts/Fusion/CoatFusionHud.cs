@@ -6,7 +6,8 @@ namespace Coat.Fusion
 {
     /// Connection status only. The round's verdict is CoatVan's banner, which
     /// clients now show from the host's result, so it is not repeated here.
-    /// Drawn along the bottom: the top-left is the van's line and the HUD panels.
+    /// Drawn just above the bottom line: the top-left is the van's line and the
+    /// HUD panels, and the very bottom is CoatVehicle's coat line.
     public sealed class CoatFusionHud : MonoBehaviour
     {
         public CoatFusionWorld World;
@@ -19,7 +20,10 @@ namespace Coat.Fusion
         {
             if (!Show) return;
             _style ??= new GUIStyle(GUI.skin.label) { fontSize = 15, richText = true };
-            float y = Screen.height - 34f;
+            // One line up from the bottom: CoatVehicle's coat line ("nobody in the
+            // coat", "a whole person") already sits at the very bottom, and
+            // drawing on the same line printed the two over each other.
+            float y = Screen.height - 60f;
 
             if (World != null && World.Runner != null && World.Runner.IsRunning)
             {
