@@ -39,12 +39,7 @@ namespace Coat.Fusion
                     $"<color=#8ce87a>ONLINE</color> ({(host ? "host" : "client")})   {World.PlayerCount}/4 players   {role}{ticks}", _style);
 
                 if (host)
-                {
-                    string spare = SpareLimbs();
-                    if (spare.Length > 0)
-                        GUI.Label(new Rect(14f, y - 24f, 1600f, 24f),
-                            "<color=#9a8fa8>limbs nobody has joined for are yours too:</color>   " + spare, _style);
-                }
+                    GUI.Label(new Rect(14f, y - 24f, 1800f, 24f), Limbs(), _style);
 
                 if (!string.IsNullOrEmpty(World.LastError))
                     GUI.Label(new Rect(14f, y - 48f, 1600f, 24f),
@@ -84,17 +79,30 @@ namespace Coat.Fusion
             if (Keyboard.current.f7Key.wasPressedThisFrame) _ = Runner.StartClient();
         }
 
-        /// The limbs the host's own keyboard is playing, with their offline keys,
-        /// read from the live bindings so the two cannot drift apart.
-        string SpareLimbs()
+        /// Host only: who plays each limb, and for a joined player whether their
+        /// input is reaching the host. Keys are read from the live bindings so the
+        /// two cannot drift apart.
+        string Limbs()
         {
             var input = World.LocalInput;
+            string Keys(int set) => input != null ? input.Describe(set) : "?";
+
             string list = "";
             for (int i = 0; i < 4; i++)
             {
-                if (World.RoleTaken(i)) continue;
-                string keys = input != null ? input.Describe(i) : "its usual keys";
-                list += (list.Length > 0 ? "   |   " : "") + CoatFusionWorld.RoleName(i) + " " + keys;
+                string who;
+                if (World.RoleIsLocal(i))
+                    who = "you, " + Keys(CoatFusionInputProvider.OwnControls);
+                else if (!World.RoleTaken(i))
+                    who = i == CoatFusionInputProvider.OwnControls && World.LocalRoleIndex >= 0 && World.LocalRoleIndex != i
+                        ? "nobody"
+                        : "your " + Keys(i);
+                else
+                    who = World.RolePlayers.Get(i) + (World.InputArriving(i)
+                        ? ", input ok"
+                        : ", <color=#ff5b5b>no input</color>");
+
+                list += (list.Length > 0 ? "   |   " : "") + "<color=#9a8fa8>" + CoatFusionWorld.RoleName(i) + ":</color> " + who;
             }
             return list;
         }

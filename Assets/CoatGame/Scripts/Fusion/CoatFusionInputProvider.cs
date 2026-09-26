@@ -20,7 +20,8 @@ namespace Coat.Fusion
         /// first control set -- W A S D, Left Shift, Q, or the first gamepad --
         /// whichever limb they were dealt. The role only decides where the host
         /// files this input; it no longer decides which keys this player presses.
-        const int OwnControls = 0;
+        /// The host reads its own limb from the same set directly, not from here.
+        public const int OwnControls = 0;
 
         public void OnInput(NetworkRunner runner, NetworkInput input)
         {

@@ -90,6 +90,12 @@ namespace Coat.Fusion
         readonly NetworkButtons[] _previousButtons = new NetworkButtons[4];
         readonly bool[] _localActionWas = new bool[4];
         readonly bool[] _localCoatWas = new bool[4];
+        readonly CoatFusionInput[] _lastInput = new CoatFusionInput[4];
+        readonly int[] _missedTicks = new int[4];
+
+        /// How long a remote player's last input is held when a tick's input is
+        /// late or lost (Photon's advice), before the limb is let go: 0.2 s.
+        const int HoldMissingInputTicks = 10;
         bool _built;
         bool _callbacksAdded;
         bool _proxyPhysics;
@@ -313,11 +319,27 @@ namespace Coat.Fusion
             for (int role = 0; role < 4; role++)
             {
                 PlayerRef player = RolePlayers.Get(role);
+
+                // Nobody joined for this limb: the host plays it on its offline keys,
+                // unless those are the keys the host already plays its own limb on.
                 if (!Connected(player))
                 {
-                    FromHostKeyboard(role);
+                    bool clash = role == CoatFusionInputProvider.OwnControls && _localRole >= 0 && _localRole != role;
+                    if (!clash) FromHostKeyboard(role, role);
                     continue;
                 }
+
+                // The host's own limb is read straight off the host's own controls.
+                // Sent through Fusion's input and read back, it never arrived: the
+                // host's limb stood still while every limb read from its keyboard
+                // moved. Nothing is lost, as the host is where the input is.
+                if (player == Runner.LocalPlayer)
+                {
+                    FromHostKeyboard(role, CoatFusionInputProvider.OwnControls);
+                    _missedTicks[role] = 0;
+                    continue;
+                }
+
                 _localActionWas[role] = _localCoatWas[role] = false;
 
                 if (Runner.TryGetInputForPlayer<CoatFusionInput>(player, out var input))
@@ -328,6 +350,17 @@ namespace Coat.Fusion
                     _states[role].Coat = input.Coat;
                     _states[role].CoatDown = input.Buttons.WasPressed(_previousButtons[role], CoatFusionButton.Coat);
                     _previousButtons[role] = input.Buttons;
+                    _lastInput[role] = input;
+                    _missedTicks[role] = 0;
+                }
+                else if (++_missedTicks[role] <= HoldMissingInputTicks)
+                {
+                    // Late or lost this tick: keep holding what they held, so a
+                    // hiccup is not a stumble. Presses are not repeated.
+                    var last = _lastInput[role];
+                    _states[role].Move = Vector2.ClampMagnitude(last.Move, 1f);
+                    _states[role].Action = last.Action;
+                    _states[role].Coat = last.Coat;
                 }
             }
 
@@ -643,6 +676,13 @@ namespace Coat.Fusion
         /// the host's own keyboard plays it.
         public bool RoleTaken(int role) => role >= 0 && role < 4 && Connected(RolePlayers.Get(role));
 
+        /// Whether a limb is this machine's own player.
+        public bool RoleIsLocal(int role) => RoleTaken(role) && Runner != null && RolePlayers.Get(role) == Runner.LocalPlayer;
+
+        /// Host only: whether a remote player's input for this limb is reaching the
+        /// host, for the status line. False after a moment with none.
+        public bool InputArriving(int role) => role >= 0 && role < 4 && _missedTicks[role] <= HoldMissingInputTicks;
+
         int RoleOf(PlayerRef player)
         {
             for (int i = 0; i < 4; i++)
@@ -678,20 +718,21 @@ namespace Coat.Fusion
             if (PlayerCount != count) PlayerCount = count;
         }
 
-        /// A limb nobody has joined for is played from the host's own keyboard
-        /// with its offline keys (I J K L, T F G H, P ; / '), so one person can
-        /// test online alone exactly as offline, and a crew short of four can
-        /// still get everyone into the coat.
+        /// A limb played from the host's own keyboard: the host's own limb, on the
+        /// shared online controls, and any limb nobody has joined for, on its
+        /// offline keys (I J K L, T F G H, P ; / '), so one person can test online
+        /// alone exactly as offline and a crew short of four can still get
+        /// everyone into the coat.
         ///
         /// Press edges are worked out here, once per network tick, from the held
         /// keys: LocalCoatInput's own edges are per rendered frame, and a tick can
         /// run zero or two times in a frame, which would drop or double a climb-in.
-        void FromHostKeyboard(int role)
+        void FromHostKeyboard(int role, int controls)
         {
             var local = LocalInput != null ? LocalInput.States : null;
-            if (local == null || role >= local.Length) return;
+            if (local == null || controls < 0 || controls >= local.Length) return;
 
-            var k = local[role];
+            var k = local[controls];
             _states[role].Move = Vector2.ClampMagnitude(k.Move, 1f);
             _states[role].Action = k.Action;
             _states[role].ActionDown = k.Action && !_localActionWas[role];
@@ -715,6 +756,8 @@ namespace Coat.Fusion
                 if (RoleTaken(i)) continue;
                 RolePlayers.Set(i, player);
                 _previousButtons[i] = default;
+                _lastInput[i] = default;
+                _missedTicks[i] = 0;
                 CountPlayers();
                 Debug.Log($"[4 Limbs] {player} plays the {RoleName(i)}.");
                 return;
@@ -733,6 +776,8 @@ namespace Coat.Fusion
         {
             RolePlayers.Set(role, PlayerRef.None);
             _previousButtons[role] = default;
+            _lastInput[role] = default;
+            _missedTicks[role] = 0;
         }
 
         public static string RoleName(int role) => role switch

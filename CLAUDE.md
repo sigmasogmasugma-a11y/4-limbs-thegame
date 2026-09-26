@@ -199,7 +199,9 @@ Sqwad Look" / "The 4 Limbs Look")
 - As built: the host ticks the game in `FixedUpdateNetwork` and then steps physics
   itself (`simulationMode = Script`) to keep offline's input → logic → physics order;
   Fusion's Tick Rate must be 50 to match the 0.02 s the ragdoll is tuned at. The host
-  sends every synced body's full state (~76 bodies), not the root + IK targets above —
+  reads its own limb straight off its keyboard (through Fusion's input it never
+  arrived; cause unknown, so watch remote players' "input ok" on the status line).
+  The host sends every synced body's full state (~76 bodies), not the root + IK targets above —
   a first version; move to the plan if bandwidth hurts. Clients settle the host's
   result numbers locally (`CoatVan.ApplyNetworkResult`) so each is paid into their
   own save; `CoatSave` can only write the local file. Online, everyone plays on
@@ -268,10 +270,12 @@ Sqwad Look" / "The 4 Limbs Look")
 - Frog Sqwad palette + toon shading (`CoatPalette`, `Coat/Toon`, `Coat/Sky`): in the
   owner's editor, not yet judged against Frog Sqwad side by side.
 - Online (`Scripts/Fusion/`): compiles against Fusion 2.1.3 in the owner's editor, and
-  F6 hosts. Getting the host dealt a limb and moving is the current fix (the status
-  line counts host ticks and shows tick errors in red); a second peer (F7) has never
-  joined. Fusion is never committed (`Assets/Photon/` is gitignored; the repo is
-  public and the SDK holds the owner's App ID). Not wired to the menu:
+  F6 hosts. The host is dealt a limb, and limbs nobody joined for move on the host's
+  offline keys. The host's own limb reading straight off its keyboard is the latest
+  fix, not yet confirmed. The status line counts host ticks, shows tick errors in
+  red, and each limb's player and input. A second peer (F7) has never joined.
+  Fusion is never committed (`Assets/Photon/` is gitignored; the repo is public and
+  the SDK holds the owner's App ID). Not wired to the menu:
   `CoatLobby.Online` is still false. F5 restart is off online.
 - Coat/head host lock: agreed, not written. (The host-only observer is done, via
   `ExternalSimulation`, in both observers.)

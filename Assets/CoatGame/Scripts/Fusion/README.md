@@ -32,10 +32,11 @@ second peer.**
   the session, the player count and your limb.
 - Limbs are dealt in join order: left leg, right leg, left arm, right arm.
 - A limb nobody has joined for is played from the host's keyboard with its offline
-  keys (I J K L, T F G H, P ; / '), so one person can test online alone. The line
-  above the status line lists them.
+  keys (I J K L, T F G H, P ; / '), so one person can test online alone.
 - The host's status line counts network ticks. If it stays at 0, the game is not
-  being run at all. An exception in the host's tick is shown in red above it.
+  being run at all. The line above it lists who plays each limb and, for a joined
+  player, whether their input is reaching the host ("input ok" / "no input"). An
+  exception in the host's tick is shown in red above that.
 - Everyone uses the same controls on their own machine: **W A S D** to move,
   **Left Shift** for grab/brace, **Q** to climb in or out of the coat (or the first
   gamepad).
@@ -47,6 +48,10 @@ second peer.**
   `ClassicRagdoll.Tick` and whichever observers are up, then steps physics itself
   (`Physics.simulationMode = Script`), keeping the offline order: input, logic,
   one physics step.
+- The host's own limb is read straight off the host's controls, not through
+  Fusion's input: sent through it and read back with `TryGetInputForPlayer`, the
+  host's limb never moved (cause not found). Remote players go through Fusion; a
+  late or lost tick of theirs holds their last input for up to 0.2 s.
 - The host sends every body of the disguise, the kids and the coat (pose and
   whether it is switched on), who is aboard, both observers (suspicion, tell,
   where they are looking), the van (phase, clock, door, who is home), the loot and
