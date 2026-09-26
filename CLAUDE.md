@@ -27,8 +27,9 @@ are four kids stacked in a trenchcoat trying to pass as one normal person.
 - **Around it:** main menu (Play / Settings / Shop / Quit), a random round picked at
   game start with a reveal reel, a cosmetics shop (empty), saved coins/settings.
 
-Online 4-player (Photon Fusion 2.1) hosts and plays in the owner's editor; no second
-player has joined yet — see `Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
+Online (Photon Fusion 2.1) works host + one client on one PC (editor hosts, a build
+joins); never yet across the internet or with 3-4 players — see
+`Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
 keyboard (or gamepads).
 
 ### Controls
@@ -282,8 +283,11 @@ Sqwad Look" / "The 4 Limbs Look")
 - Online (`Scripts/Fusion/`): compiles against Fusion 2.1.3 in the owner's editor, and
   F6 hosts, and all four limbs move (confirmed by the owner): the host's own on
   W A S D, read straight off its keyboard, and limbs nobody joined for on the host's
-  offline keys. The status line counts host ticks, shows tick errors in red, and each
-  limb's player and input. A second peer (F7) has never joined — that is next.
+  offline keys. A build joined the editor with F7 on the same PC and played its limb
+  (confirmed by the owner); the client's smoothing between host states is the latest
+  fix, not yet confirmed. The status line counts host ticks, shows tick errors in
+  red, fps, each limb's player and input, and on a client, host updates per second.
+  Next: two PCs over the internet, then 3-4 players.
   Fusion is never committed (`Assets/Photon/` is gitignored; the repo is public and
   the SDK holds the owner's App ID). Not wired to the menu:
   `CoatLobby.Online` is still false. F5 restart is off online.
