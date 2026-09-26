@@ -27,8 +27,8 @@ are four kids stacked in a trenchcoat trying to pass as one normal person.
 - **Around it:** main menu (Play / Settings / Shop / Quit), a random round picked at
   game start with a reveal reel, a cosmetics shop (empty), saved coins/settings.
 
-Online 4-player (Photon Fusion 2.1) is written and compiling, not yet run — see
-`Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
+Online 4-player (Photon Fusion 2.1) hosts and plays in the owner's editor; no second
+player has joined yet — see `Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
 keyboard (or gamepads).
 
 ### Controls
@@ -200,7 +200,7 @@ Sqwad Look" / "The 4 Limbs Look")
   itself (`simulationMode = Script`) to keep offline's input → logic → physics order;
   Fusion's Tick Rate must be 50 to match the 0.02 s the ragdoll is tuned at. The host
   reads its own limb straight off its keyboard (through Fusion's input it never
-  arrived; cause unknown, so watch remote players' "input ok" on the status line).
+  moved; cause unknown, so watch remote players' "input ok" on the status line).
   The host sends every synced body's full state (~76 bodies), not the root + IK targets above —
   a first version; move to the plan if bandwidth hurts. Clients settle the host's
   result numbers locally (`CoatVan.ApplyNetworkResult`) so each is paid into their
@@ -270,10 +270,10 @@ Sqwad Look" / "The 4 Limbs Look")
 - Frog Sqwad palette + toon shading (`CoatPalette`, `Coat/Toon`, `Coat/Sky`): in the
   owner's editor, not yet judged against Frog Sqwad side by side.
 - Online (`Scripts/Fusion/`): compiles against Fusion 2.1.3 in the owner's editor, and
-  F6 hosts. The host is dealt a limb, and limbs nobody joined for move on the host's
-  offline keys. The host's own limb reading straight off its keyboard is the latest
-  fix, not yet confirmed. The status line counts host ticks, shows tick errors in
-  red, and each limb's player and input. A second peer (F7) has never joined.
+  F6 hosts, and all four limbs move (confirmed by the owner): the host's own on
+  W A S D, read straight off its keyboard, and limbs nobody joined for on the host's
+  offline keys. The status line counts host ticks, shows tick errors in red, and each
+  limb's player and input. A second peer (F7) has never joined — that is next.
   Fusion is never committed (`Assets/Photon/` is gitignored; the repo is public and
   the SDK holds the owner's App ID). Not wired to the menu:
   `CoatLobby.Online` is still false. F5 restart is off online.
