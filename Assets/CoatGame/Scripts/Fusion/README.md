@@ -17,10 +17,11 @@ second peer.**
    App ID, and this repository is public.
 2. Enter the Photon App ID in Fusion's settings. Get it from the project owner in a
    private message. Never commit it.
-3. All network code is inside `#if FUSION2`. Fusion 2.1 did not add that symbol by
-   itself here: add `FUSION2` under Project Settings > Player > Other Settings >
-   Scripting Define Symbols, then Apply. (No **Coat > Fusion** menu means it is
-   missing.) Without Fusion the project compiles and plays offline as before.
+3. All network code is inside `#if FUSION2`. The symbol is now committed in
+   `ProjectSettings.asset` (Scripting Define Symbols, with Fusion's own `FUSION_*`
+   ones), so **a fresh clone does not compile until the Fusion SDK is imported**.
+   To play offline without Fusion, remove `FUSION2` there and Apply. (No
+   **Coat > Fusion** menu with Fusion imported means the symbol is missing.)
 4. In the Network Project Config, set **Tick Rate to 50**. The ragdoll is tuned at
    the project's fixed timestep of 0.02 s; the host logs a warning if they differ.
 5. Open `SampleScene`, run **Coat > Fusion > Setup Current Scene**, and save.

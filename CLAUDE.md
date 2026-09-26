@@ -29,8 +29,9 @@ are four kids stacked in a trenchcoat trying to pass as one normal person.
 
 Online (Photon Fusion 2.1) works host + one client on one PC (editor hosts, a build
 joins); never yet across the internet or with 3-4 players — see
-`Scripts/Fusion/README.md`. Without Fusion imported it is four players on one
-keyboard (or gamepads).
+`Scripts/Fusion/README.md`. Offline it is four players on one keyboard (or gamepads).
+`FUSION2` is committed in the project's define symbols, so a fresh clone must import
+the Fusion 2 SDK (gitignored) before it compiles, or remove the symbol to go offline.
 
 ### Controls
 
