@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: CoatCrewRightLeg
-  m_Shader: {fileID: 4800000, guid: f5a9632c16cc426a99c78c04493e7b3f, type: 3}
+  m_Name: CoatSky
+  m_Shader: {fileID: 4800000, guid: 603d05f2e7f24afb84f629fad35eeeec, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -25,16 +25,10 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _Cull: 2
-    - _HighlightSize: 0.03
-    - _LightTint: 0.25
-    - _OutlineWidth: 2.2
-    - _ShadeSoftness: 0.015
-    - _ShadeThreshold: 0.5
+    - _Curve: 0.6
     m_Colors:
-    - _BaseColor: {r: 0.9961, g: 0.6863, b: 0.1961, a: 1}
-    - _HighlightColor: {r: 1, g: 1, b: 1, a: 0.35}
-    - _OutlineColor: {r: 0.1843, g: 0.0863, b: 0.2627, a: 1}
-    - _ShadeColor: {r: 0.698, g: 0.4549, b: 0.0706, a: 1}
+    - _BottomColor: {r: 0.6471, g: 0.8471, b: 0.8863, a: 1}
+    - _HorizonColor: {r: 0.6471, g: 0.8471, b: 0.8863, a: 1}
+    - _TopColor: {r: 0.3569, g: 0.7216, b: 0.7961, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

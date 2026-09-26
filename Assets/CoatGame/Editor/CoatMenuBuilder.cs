@@ -57,7 +57,7 @@ public static class CoatMenuBuilder
         var camGo = new GameObject("Main Camera");
         var cam = camGo.AddComponent<Camera>();
         cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.07f, 0.07f, 0.09f);
+        cam.backgroundColor = CoatPalette.UiBackground;
         camGo.AddComponent<AudioListener>();
         camGo.tag = "MainCamera";
         SceneManager.MoveGameObjectToScene(camGo, scene);

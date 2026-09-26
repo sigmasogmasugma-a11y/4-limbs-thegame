@@ -175,18 +175,9 @@ namespace Coat
         public static string BoneFor(CosmeticSlot shared) =>
             shared == CosmeticSlot.Head ? "Head" : "Torso";
 
-        /// Runtime copy of the limb palette. CoatDressUp owns the authoritative
-        /// table for the mesh itself; this is for menus and readouts.
-        public static Color Colour(CoatRole role)
-        {
-            switch (role)
-            {
-                case CoatRole.RightArm: return new Color(0.90f, 0.29f, 0.25f);   // red
-                case CoatRole.LeftArm:  return new Color(0.20f, 0.45f, 0.88f);   // blue
-                case CoatRole.RightLeg: return new Color(0.97f, 0.79f, 0.15f);   // yellow
-                default:                return new Color(0.28f, 0.72f, 0.34f);   // green
-            }
-        }
+        /// The limb's colour, for menus and readouts. CoatPalette is the one
+        /// table: the meshes (CoatDressUp) read the same values.
+        public static Color Colour(CoatRole role) => CoatPalette.Limb(role);
 
         public static string Label(CoatRole role)
         {

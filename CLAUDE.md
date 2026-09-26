@@ -79,6 +79,8 @@ All game code is under `Assets/CoatGame/`.
   networked input.
 - `CoatTypes` — `CoatRole` (`LeftLeg=0, RightLeg=1, LeftArm=2, RightArm=3`); most
   per-player arrays are indexed by `(int)role`.
+- `CoatPalette` — every colour in the game (Frog Sqwad's palette), with each
+  character colour's toon shadow tone. The builders, the HUD and the menu read it.
 
 **`Scripts/Fusion/` — online play** (all inside `#if FUSION2`; written by Jae, the
 networking collaborator, merged onto current `master`). `CoatFusionWorld` is the
@@ -103,7 +105,8 @@ Job`, `Check Stepping`, ...). Builders: `Build Main Menu`, `Build Round Stock`,
 `Dress The Rig`.
 
 **`Art/`** (inside Assets) — `Disguise.fbx`, `RedChild.fbx`, per-limb materials,
-`CoatHidden.shader`. **`Resources/`** — `CoatShopStock.asset`, `CoatRoundStock.asset`.
+`CoatHidden.shader`, `CoatToon.shader` (the characters), `CoatSky.shader` (the
+gradient sky), `CoatHazard.png` (kerb stripes). **`Resources/`** — `CoatShopStock.asset`, `CoatRoundStock.asset`.
 
 **`/Art` at the repo root** — the Blender side, run headless
 (`blender.exe --background --python <script>`): `build_characters.py` (procedural
@@ -157,6 +160,22 @@ the rigidbody names, exports FBX into `Assets/CoatGame/Art/`), `FourLimbs.blend`
 **UI** — everything is IMGUI, to match the existing HUDs: no canvas, no prefabs, no
 scene wiring, drivable from a harness. Rules live outside the UI classes.
 
+**The look** (Frog Sqwad's, asked for by the owner; art direction pages "The Frog
+Sqwad Look" / "The 4 Limbs Look")
+- **Colour gives you away.** The world, the coat and the observer are muted; the
+  four limbs are the only loud colour on the body, so every tell shows up in colour.
+  Only goals and hazards (violet van, orchid cake, striped kerb) are also strong.
+- Limbs: coral red `#FE564D`, cyan `#57D0D9`, orange `#FEAF32`, lime `#93DE5A` —
+  each kept in its old colour family. All values live in `CoatPalette`; change them
+  there, then re-run Dress The Rig / Build Test Scene (both overwrite the materials).
+- **Characters only** are toon shaded (`Coat/Toon`): lit and shadow as two flat
+  colours, a small hard highlight, a plum outline (`#2F1643`, never black). The lit
+  colour is the hex value itself, not scaled by the sun, so swatches match the
+  screen. The world stays on URP Lit with no outlines. `CoatFabric` (the coat tube)
+  is double-sided (`_Cull` 0) with no outline, or its inside would draw plum.
+- Scene: gradient ambient light, a warm sun (`#FFF0D8`), linear fog 35–110 m, and
+  the `Coat/Sky` gradient sky instead of the default skybox.
+
 **Networking** (designed with rickleo, the networking collaborator — keep to it)
 - Photon **Fusion**, host-authoritative. One peer simulates the whole body; everyone
   else sends input only. **Never split state authority across jointed limbs** — the
@@ -201,7 +220,10 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
   never log labels you assigned yourself — that's what hid this for three rounds.
 - **Hiding a limb:** check `activeSelf`, not `activeInHierarchy`.
 - **`CoatVertexColor.shader` is a dead end** — renders in the Scene view, draws
-  nothing in the Game view (borrowed a depth pass that rejects it). Use stock URP Lit.
+  nothing in the Game view (borrowed a depth pass that rejects it). The world uses
+  stock URP Lit; the characters use `Coat/Toon`, which writes its own DepthOnly and
+  DepthNormals (the renderer is Forward+ with SSAO, so both run). Any shader change:
+  check the Game view, not just the Scene view.
 - **`CoatSave.Save` writes one fixed path whatever profile you pass.** Tests must
   never call anything that saves with a scratch profile — use
   `CoatRoundResult.Evaluate`, not `Settle`; `CoatRounds.Record`, not `Begin`.
@@ -221,6 +243,7 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
 - **Measure the defect before fixing it.** A hand "membrane" was once cut away that
   didn't exist and wrecked the model. Only touch what was flagged.
 - **Don't change the characters' appearance** (the disguise, the kids) unless asked.
+  (Colours and toon shading were asked for; the models are unchanged.)
 - **Fusion 2 proxies don't run `FixedUpdateNetwork`.** Anything a client must show
   from the host's state goes in `Render()`.
 - **`FindFirstObjectByType` skips switched-off objects.** The disguise and both
@@ -242,6 +265,9 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
 - Shop rules and cosmetic resolution (48 checks), round draw + reveal reel (30 checks).
 
 **Half-done**
+- Frog Sqwad palette + toon shading (`CoatPalette`, `Coat/Toon`, `Coat/Sky`): written,
+  **not yet seen in Unity**. The first open is the test: characters in candy colours
+  with plum outlines, a violet van, a striped kerb, a cyan sky.
 - Online: written (`Scripts/Fusion/`), never compiled or run. Fusion 2 is **not
   imported** and never committed (`Assets/Photon/` is gitignored; the repo is public
   and the SDK holds the owner's App ID). Not wired to the menu: `CoatLobby.Online` is
