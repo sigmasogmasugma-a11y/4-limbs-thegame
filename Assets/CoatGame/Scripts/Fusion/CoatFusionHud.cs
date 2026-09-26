@@ -16,6 +16,11 @@ namespace Coat.Fusion
 
         GUIStyle _style;
 
+        // Frames drawn per second, counted over half a second, so a slow build can
+        // be told apart from a smooth one that is only being sent few updates.
+        float _fps, _fpsSince;
+        int _frames;
+
         void OnGUI()
         {
             if (!Show) return;
@@ -33,8 +38,11 @@ namespace Coat.Fusion
                     : $"you are the <b>{CoatFusionWorld.RoleName(World.LocalRoleIndex)}</b>   (W A S D, Left Shift, Q)";
 
                 // The tick count says the host's game is running at all; if it
-                // sits at 0, nothing can move whatever the keys do.
-                string ticks = host ? $"   <color=#9a8fa8>tick {World.HostTicks}</color>" : "";
+                // sits at 0, nothing can move whatever the keys do. A client shows
+                // how often fresh host states arrive instead.
+                string ticks = host
+                    ? $"   <color=#9a8fa8>tick {World.HostTicks}   {_fps:0} fps</color>"
+                    : $"   <color=#9a8fa8>{_fps:0} fps   host updates {World.HostUpdatesPerSecond:0}/s</color>";
                 GUI.Label(new Rect(14f, y, 1600f, 24f),
                     $"<color=#8ce87a>ONLINE</color> ({(host ? "host" : "client")})   {World.PlayerCount}/4 players   {role}{ticks}", _style);
 
@@ -74,6 +82,15 @@ namespace Coat.Fusion
 
         void Update()
         {
+            _frames++;
+            float counted = Time.unscaledTime - _fpsSince;
+            if (counted >= 0.5f)
+            {
+                _fps = _frames / counted;
+                _frames = 0;
+                _fpsSince = Time.unscaledTime;
+            }
+
             if (Runner == null || Keyboard.current == null) return;
             if (Keyboard.current.f6Key.wasPressedThisFrame) _ = Runner.StartHost();
             if (Keyboard.current.f7Key.wasPressedThisFrame) _ = Runner.StartClient();
