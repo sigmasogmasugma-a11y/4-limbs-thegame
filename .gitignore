@@ -54,3 +54,8 @@ crashlytics-build.properties
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Photon Fusion 2 SDK: each developer installs it, it is never committed.
+# It also holds the Photon App ID, and this repository is public.
+/[Aa]ssets/Photon/
+/[Aa]ssets/Photon.meta

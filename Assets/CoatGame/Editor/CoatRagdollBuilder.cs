@@ -100,7 +100,7 @@ public static class CoatRagdollBuilder
     static CoatCharacter BuildCharacter(Transform parent, string name, CoatRole role, Vector3 at, Color tint)
     {
         var suit = Mat("CoatPerson" + name, tint);
-        var skin = Mat("CoatSkin", new Color(0.78f, 0.62f, 0.50f));
+        var skin = Mat("CoatSkin", CoatPalette.Skin);
 
         var go = new GameObject("Person_" + name);
         go.transform.SetParent(parent, false);
@@ -215,7 +215,7 @@ public static class CoatRagdollBuilder
 
     static TheCoat BuildCoat(Transform parent)
     {
-        var fabric = Mat("CoatFabric", new Color(0.17f, 0.18f, 0.22f));
+        var fabric = Mat("CoatFabric", CoatPalette.Trenchcoat, CoatPalette.TrenchcoatShade);
         // A one-sided tube shows you its own interior from the wrong angle.
         if (fabric.HasProperty("_Cull")) fabric.SetFloat("_Cull", 0f);
         fabric.doubleSidedGI = true;
@@ -245,7 +245,7 @@ public static class CoatRagdollBuilder
         hem.localPosition = new Vector3(0f, -0.50f, 0f);
 
         // The one head the disguise shows the world. The riders hide their own.
-        var skin = Mat("CoatSkin", new Color(0.78f, 0.62f, 0.50f));
+        var skin = Mat("CoatSkin", CoatPalette.Skin);
         var face = Prim(PrimitiveType.Sphere, "DisguiseHead", collar,
                         collar.position + Vector3.up * 0.16f, Vector3.one * 0.3f, skin);
         face.SetActive(false);
@@ -275,20 +275,32 @@ public static class CoatRagdollBuilder
 
     static void BuildLevel()
     {
-        var ground = Mat("CoatGround", new Color(0.30f, 0.31f, 0.33f));
-        var prop = Mat("CoatProp", new Color(0.56f, 0.45f, 0.31f));
-        var trim = Mat("CoatTrim", new Color(0.60f, 0.20f, 0.22f));
+        var ground = Mat("CoatGround", CoatPalette.Road);
+        var prop = Mat("CoatProp", CoatPalette.Wood);
+        var trim = Mat("CoatTrim", CoatPalette.Doorway);
+        var steps = Mat("CoatStep", CoatPalette.Pavement);
+        // Frog Sqwad marks every drop with yellow and black stripes. The kerb is
+        // a cube stretched to 11 x 0.5 m, so the stripe tile repeats 22 times
+        // along it to stay square.
+        var kerb = Mat("CoatKerb", Color.white);
+        var hazard = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/CoatGame/Art/CoatHazard.png");
+        if (hazard != null && kerb.HasProperty("_BaseMap"))
+        {
+            kerb.SetTexture("_BaseMap", hazard);
+            kerb.SetTextureScale("_BaseMap", new Vector2(22f, 1f));
+            EditorUtility.SetDirty(kerb);
+        }
 
         var root = new GameObject("TestLevel");
         var t = root.transform;
 
         Prim(PrimitiveType.Cube, "Ground", t, new Vector3(0f, -0.5f, 0f), new Vector3(44f, 1f, 44f), ground);
-        Prim(PrimitiveType.Cube, "Kerb", t, new Vector3(0f, 0.07f, 5.5f), new Vector3(11f, 0.14f, 0.5f), trim);
+        Prim(PrimitiveType.Cube, "Kerb", t, new Vector3(0f, 0.07f, 5.5f), new Vector3(11f, 0.14f, 0.5f), kerb);
 
         for (int i = 0; i < 3; i++)
         {
             float h = 0.20f + i * 0.20f;
-            Prim(PrimitiveType.Cube, "Step" + i, t, new Vector3(-5.5f, h * 0.5f, 8.2f + i * 0.7f), new Vector3(4f, h, 0.7f), ground);
+            Prim(PrimitiveType.Cube, "Step" + i, t, new Vector3(-5.5f, h * 0.5f, 8.2f + i * 0.7f), new Vector3(4f, h, 0.7f), steps);
         }
 
         Prim(PrimitiveType.Cube, "JambL", t, new Vector3(4.3f, 1.1f, 8.2f), new Vector3(0.3f, 2.2f, 0.35f), trim);
@@ -323,9 +335,9 @@ public static class CoatRagdollBuilder
     /// is the answer the players find by looking rather than by being told.
     static CoatLoot BuildJob(CoatGame game, CoatVan van)
     {
-        var prop = Mat("CoatProp", new Color(0.56f, 0.45f, 0.31f));
-        var silver = Mat("CoatTray", new Color(0.78f, 0.79f, 0.83f));
-        var icing = Mat("CoatCake", new Color(0.94f, 0.86f, 0.80f));
+        var prop = Mat("CoatProp", CoatPalette.Wood);
+        var silver = Mat("CoatTray", CoatPalette.Tray);
+        var icing = Mat("CoatCake", CoatPalette.Icing);
 
         var root = new GameObject("TheJob");
         var t = root.transform;
@@ -376,9 +388,9 @@ public static class CoatRagdollBuilder
     /// pitches the disguise over; a van sill would be worse.
     static CoatVan BuildVan(CoatGame game, TheCoat coat)
     {
-        var panel = Mat("CoatVanPanel", new Color(0.82f, 0.83f, 0.86f));
-        var shutter = Mat("CoatVanShutter", new Color(0.55f, 0.57f, 0.62f));
-        var rubber = Mat("CoatVanTyre", new Color(0.13f, 0.13f, 0.15f));
+        var panel = Mat("CoatVanPanel", CoatPalette.Van);
+        var shutter = Mat("CoatVanShutter", CoatPalette.VanShutter);
+        var rubber = Mat("CoatVanTyre", CoatPalette.Tyre);
 
         var root = new GameObject("Van");
         var t = root.transform;
@@ -448,7 +460,7 @@ public static class CoatRagdollBuilder
         const float ShX = 0.20f, ShY = 1.48f, ElbowY = 1.16f, WristY = 0.88f;
 
         var cloth = Mat("CoatCloth", new Color(0.20f, 0.21f, 0.25f));
-        var skin = Mat("CoatSkin", new Color(0.78f, 0.62f, 0.50f));
+        var skin = Mat("CoatSkin", CoatPalette.Skin);
         var left = Mat("CoatPersonLeftLeg", new Color(0.28f, 0.55f, 0.86f));
         var right = Mat("CoatPersonRightLeg", new Color(0.88f, 0.47f, 0.28f));
 
@@ -503,7 +515,7 @@ public static class CoatRagdollBuilder
     /// hem hanging free and pushed out by the legs from the inside.
     static void ClassicCoat(Transform parent, Coat.Classic.ClassicRagdoll body)
     {
-        var fabric = Mat("CoatFabric", new Color(0.17f, 0.18f, 0.22f));
+        var fabric = Mat("CoatFabric", CoatPalette.Trenchcoat, CoatPalette.TrenchcoatShade);
         // A one-sided tube shows you its own interior from the wrong angle.
         if (fabric.HasProperty("_Cull")) fabric.SetFloat("_Cull", 0f);
         fabric.doubleSidedGI = true;
@@ -605,8 +617,8 @@ public static class CoatRagdollBuilder
 
     static CoatObserver BuildObserver(TheCoat coat, CoatCharacter[] people)
     {
-        var suit = Mat("CoatObserverSuit", new Color(0.36f, 0.62f, 0.38f));
-        var skin = Mat("CoatSkin", new Color(0.78f, 0.62f, 0.50f));
+        var suit = Mat("CoatObserverSuit", CoatPalette.ObserverSuit, CoatPalette.ObserverSuitShade);
+        var skin = Mat("CoatSkin", CoatPalette.Skin);
 
         var root = new GameObject("Observer");
         root.transform.position = new Vector3(2.6f, 0f, 4.4f);
@@ -633,8 +645,8 @@ public static class CoatRagdollBuilder
     /// because back then there was only ever one body to watch.
     static Coat.Classic.ClassicObserver BuildClassicObserver(Coat.Classic.ClassicRagdoll body)
     {
-        var suit = Mat("CoatObserverSuit", new Color(0.36f, 0.62f, 0.38f));
-        var skin = Mat("CoatSkin", new Color(0.78f, 0.62f, 0.50f));
+        var suit = Mat("CoatObserverSuit", CoatPalette.ObserverSuit, CoatPalette.ObserverSuitShade);
+        var skin = Mat("CoatSkin", CoatPalette.Skin);
 
         var root = new GameObject("ClassicObserver");
         root.transform.position = new Vector3(2.2f, 0f, 3.4f);
@@ -824,7 +836,7 @@ public static class CoatRagdollBuilder
 
     // ---------- misc ----------
 
-    static Material Mat(string name, Color c)
+    static Material Mat(string name, Color c, Color? shade = null)
     {
         if (!AssetDatabase.IsValidFolder(MatDir)) AssetDatabase.CreateFolder(Root, "Materials");
 
@@ -840,6 +852,9 @@ public static class CoatRagdollBuilder
         if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
         if (m.HasProperty("_Color")) m.SetColor("_Color", c);
         if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.15f);
+        // Toon materials (the characters, Coat/Toon) carry a shadow tone too.
+        // An existing material keeps its shader here, so only those have one.
+        if (m.HasProperty("_ShadeColor")) m.SetColor("_ShadeColor", shade ?? CoatPalette.Shade(c));
         EditorUtility.SetDirty(m);
         return m;
     }

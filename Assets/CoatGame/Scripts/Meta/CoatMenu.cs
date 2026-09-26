@@ -51,17 +51,20 @@ namespace Coat
             return t;
         }
 
+        static Color WithAlpha(Color c, float a) { c.a = a; return c; }
+
         void Build()
         {
             if (_built) return;
             _built = true;
 
-            _bg       = Solid(new Color(0.07f, 0.07f, 0.09f));
-            _panelBg  = Solid(new Color(0.12f, 0.12f, 0.15f, 0.96f));
-            _rowBg    = Solid(new Color(0.16f, 0.16f, 0.20f, 0.95f));
-            _btnBg    = Solid(new Color(0.20f, 0.20f, 0.25f));
-            _btnHover = Solid(new Color(0.30f, 0.31f, 0.38f));
-            _tabBg    = Solid(new Color(0.15f, 0.15f, 0.19f));
+            // Frog Sqwad's menu colours (CoatPalette): plum panels, violet buttons.
+            _bg       = Solid(CoatPalette.UiBackground);
+            _panelBg  = Solid(WithAlpha(CoatPalette.UiPanel, 0.96f));
+            _rowBg    = Solid(WithAlpha(CoatPalette.UiRow, 0.95f));
+            _btnBg    = Solid(CoatPalette.UiButton);
+            _btnHover = Solid(CoatPalette.UiButtonHover);
+            _tabBg    = Solid(CoatPalette.UiRow);
 
             // Built once, not per frame: OnGUI runs several times a frame and
             // a texture per bar per pass leaks until the next collection.
@@ -83,7 +86,7 @@ namespace Coat
                 wordWrap = true,
                 richText = true
             };
-            _sub.normal.textColor = new Color(0.62f, 0.63f, 0.70f);
+            _sub.normal.textColor = CoatPalette.UiMutedText;
 
             _btn = new GUIStyle(GUI.skin.button)
             {
@@ -93,7 +96,7 @@ namespace Coat
             _btn.normal.background = _btnBg;
             _btn.hover.background = _btnHover;
             _btn.active.background = _btnHover;
-            _btn.normal.textColor = new Color(0.90f, 0.91f, 0.95f);
+            _btn.normal.textColor = Color.white;
             _btn.hover.textColor = Color.white;
             _btn.border = new RectOffset(2, 2, 2, 2);
 
@@ -101,17 +104,17 @@ namespace Coat
             _tabBtn.normal.background = _tabBg;
 
             _tabOn = new GUIStyle(_tabBtn) { fontStyle = FontStyle.Bold };
-            _tabOn.normal.background = _btnHover;
+            _tabOn.normal.background = _btnBg;
             _tabOn.normal.textColor = Color.white;
 
             _label = new GUIStyle(GUI.skin.label) { fontSize = 18, richText = true };
-            _label.normal.textColor = new Color(0.88f, 0.89f, 0.93f);
+            _label.normal.textColor = CoatPalette.UiText;
 
             _small = new GUIStyle(GUI.skin.label)
             {
                 fontSize = 14, richText = true, wordWrap = true
             };
-            _small.normal.textColor = new Color(0.60f, 0.61f, 0.68f);
+            _small.normal.textColor = CoatPalette.UiMutedText;
 
             _row = new GUIStyle(GUI.skin.box);
             _row.normal.background = _rowBg;
@@ -284,9 +287,9 @@ namespace Coat
             // the same way a few lines earlier, survived -- so the box simply
             // never drew. A built-in texture cannot go null under me.
             Color wasColour = GUI.color;
-            GUI.color = new Color(0.45f, 0.46f, 0.54f);
+            GUI.color = CoatPalette.UiMutedText;
             GUI.DrawTexture(box, Texture2D.whiteTexture);
-            GUI.color = on ? new Color(0.36f, 0.78f, 0.42f) : new Color(0.17f, 0.17f, 0.21f);
+            GUI.color = on ? CoatPalette.UiSelected : CoatPalette.UiBackground;
             GUI.DrawTexture(new Rect(box.x + 2f, box.y + 2f, box.width - 4f, box.height - 4f),
                             Texture2D.whiteTexture);
             GUI.color = wasColour;

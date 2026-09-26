@@ -27,8 +27,11 @@ are four kids stacked in a trenchcoat trying to pass as one normal person.
 - **Around it:** main menu (Play / Settings / Shop / Quit), a random round picked at
   game start with a reveal reel, a cosmetics shop (empty), saved coins/settings.
 
-Online 4-player (Photon Fusion) is designed but not built — today it is four players
-on one keyboard (or gamepads).
+Online (Photon Fusion 2.1) works host + one client on one PC (editor hosts, a build
+joins); never yet across the internet or with 3-4 players — see
+`Scripts/Fusion/README.md`. Offline it is four players on one keyboard (or gamepads).
+`FUSION2` is committed in the project's define symbols, so a fresh clone must import
+the Fusion 2 SDK (gitignored) before it compiles, or remove the symbol to go offline.
 
 ### Controls
 
@@ -78,6 +81,15 @@ All game code is under `Assets/CoatGame/`.
   networked input.
 - `CoatTypes` — `CoatRole` (`LeftLeg=0, RightLeg=1, LeftArm=2, RightArm=3`); most
   per-player arrays are indexed by `(int)role`.
+- `CoatPalette` — every colour in the game (Frog Sqwad's palette), with each
+  character colour's toon shadow tone. The builders, the HUD and the menu read it.
+
+**`Scripts/Fusion/` — online play** (all inside `#if FUSION2`; written by Jae, the
+networking collaborator, merged onto current `master`). `CoatFusionWorld` is the
+host's tick and the clients' copy of it; `CoatFusionInputProvider` sends input;
+`CoatFusionRunner` starts/joins (F6/F7); `CoatFusionHud` is the status line. Offline
+loops are switched off through an `ExternalSimulation` flag on `CoatGame`, `CoatVan`,
+`ClassicRagdoll` and both observers. Its README has setup and what's missing.
 
 **`Scripts/Meta/` — everything around the game**
 - `CoatMenu` (IMGUI front end), `CoatSession` (self-spawning, applies settings, Esc →
@@ -95,7 +107,8 @@ Job`, `Check Stepping`, ...). Builders: `Build Main Menu`, `Build Round Stock`,
 `Dress The Rig`.
 
 **`Art/`** (inside Assets) — `Disguise.fbx`, `RedChild.fbx`, per-limb materials,
-`CoatHidden.shader`. **`Resources/`** — `CoatShopStock.asset`, `CoatRoundStock.asset`.
+`CoatHidden.shader`, `CoatToon.shader` (the characters), `CoatSky.shader` (the
+gradient sky), `CoatHazard.png` (kerb stripes). **`Resources/`** — `CoatShopStock.asset`, `CoatRoundStock.asset`.
 
 **`/Art` at the repo root** — the Blender side, run headless
 (`blender.exe --background --python <script>`): `build_characters.py` (procedural
@@ -149,6 +162,22 @@ the rigidbody names, exports FBX into `Assets/CoatGame/Art/`), `FourLimbs.blend`
 **UI** — everything is IMGUI, to match the existing HUDs: no canvas, no prefabs, no
 scene wiring, drivable from a harness. Rules live outside the UI classes.
 
+**The look** (Frog Sqwad's, asked for by the owner; art direction pages "The Frog
+Sqwad Look" / "The 4 Limbs Look")
+- **Colour gives you away.** The world, the coat and the observer are muted; the
+  four limbs are the only loud colour on the body, so every tell shows up in colour.
+  Only goals and hazards (violet van, orchid cake, striped kerb) are also strong.
+- Limbs: coral red `#FE564D`, cyan `#57D0D9`, orange `#FEAF32`, lime `#93DE5A` —
+  each kept in its old colour family. All values live in `CoatPalette`; change them
+  there, then re-run Dress The Rig / Build Test Scene (both overwrite the materials).
+- **Characters only** are toon shaded (`Coat/Toon`): lit and shadow as two flat
+  colours, a small hard highlight, a plum outline (`#2F1643`, never black). The lit
+  colour is the hex value itself, not scaled by the sun, so swatches match the
+  screen. The world stays on URP Lit with no outlines. `CoatFabric` (the coat tube)
+  is double-sided (`_Cull` 0) with no outline, or its inside would draw plum.
+- Scene: gradient ambient light, a warm sun (`#FFF0D8`), linear fog 35–110 m, and
+  the `Coat/Sky` gradient sky instead of the default skybox.
+
 **Networking** (designed with rickleo, the networking collaborator — keep to it)
 - Photon **Fusion**, host-authoritative. One peer simulates the whole body; everyone
   else sends input only. **Never split state authority across jointed limbs** — the
@@ -169,6 +198,18 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
   ids. Coat/head: local for the lobby preview only; the host resolves and **locks**
   them at round start. The round outcome is host-settled too (not yet reviewed by
   rickleo).
+- As built: the host ticks the game in `FixedUpdateNetwork` and then steps physics
+  itself (`simulationMode = Script`) to keep offline's input → logic → physics order;
+  Fusion's Tick Rate must be 50 to match the 0.02 s the ragdoll is tuned at. The host
+  reads its own limb straight off its keyboard (through Fusion's input it never
+  moved; cause unknown, so watch remote players' "input ok" on the status line).
+  Clients smooth each body between host states (`StateStamp`); placed straight onto
+  them, the client moved at the send rate (25/s) and looked laggy next to the host.
+  The host sends every synced body's full state (~76 bodies), not the root + IK targets above —
+  a first version; move to the plan if bandwidth hurts. Clients settle the host's
+  result numbers locally (`CoatVan.ApplyNetworkResult`) so each is paid into their
+  own save; `CoatSave` can only write the local file. Online, everyone plays on
+  control set 0 (W A S D / first gamepad); the role only says where the host files it.
 
 ## Traps (read these)
 
@@ -185,7 +226,10 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
   never log labels you assigned yourself — that's what hid this for three rounds.
 - **Hiding a limb:** check `activeSelf`, not `activeInHierarchy`.
 - **`CoatVertexColor.shader` is a dead end** — renders in the Scene view, draws
-  nothing in the Game view (borrowed a depth pass that rejects it). Use stock URP Lit.
+  nothing in the Game view (borrowed a depth pass that rejects it). The world uses
+  stock URP Lit; the characters use `Coat/Toon`, which writes its own DepthOnly and
+  DepthNormals (the renderer is Forward+ with SSAO, so both run). Any shader change:
+  check the Game view, not just the Scene view.
 - **`CoatSave.Save` writes one fixed path whatever profile you pass.** Tests must
   never call anything that saves with a scratch profile — use
   `CoatRoundResult.Evaluate`, not `Settle`; `CoatRounds.Record`, not `Begin`.
@@ -205,6 +249,22 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
 - **Measure the defect before fixing it.** A hand "membrane" was once cut away that
   didn't exist and wrecked the model. Only touch what was flagged.
 - **Don't change the characters' appearance** (the disguise, the kids) unless asked.
+  (Colours and toon shading were asked for; the models are unchanged.)
+- **Fusion 2 proxies don't run `FixedUpdateNetwork`.** Anything a client must show
+  from the host's state goes in `Render()`.
+- **`NetworkButtons` needs an int-backed enum.** Its generic `Set`/`IsSet`/`WasPressed`
+  assert the underlying type is `int`; `CoatFusionButton : byte` threw every tick on
+  both sides (client input never sent). The error only shows with Fusion's debug DLL.
+- **Builds drop shader variants no shipped material uses.** `CoatSeeThrough` makes
+  transparent clones of opaque URP Lit materials at runtime; in a build they drew
+  solid until `Resources/CoatSeeThroughVariant.mat` (Lit, `_SURFACE_TYPE_TRANSPARENT`)
+  shipped the variant. Anything that flips keywords at runtime needs the same, and
+  must be checked in a build, not just the editor.
+- **`FindFirstObjectByType` skips switched-off objects.** The disguise and both
+  observers are off whenever the coat isn't worn — get them from `CoatVehicle`.
+- **Never upload whole files through GitHub's website** on top of newer code. That
+  once put back old copies of `CoatVan` and both observers and deleted the round
+  outcome. Pull `master` first, change it, push with git.
 
 ## Status
 
@@ -219,9 +279,21 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
 - Shop rules and cosmetic resolution (48 checks), round draw + reveal reel (30 checks).
 
 **Half-done**
-- Online: none built. Fusion is **not imported** (needs the owner's Photon account /
-  App ID). `CoatLobby.Online` is false; Join refuses by design.
-- `IsHost` guard in both observers and the coat/head host lock: agreed, not written.
+- Frog Sqwad palette + toon shading (`CoatPalette`, `Coat/Toon`, `Coat/Sky`): in the
+  owner's editor, not yet judged against Frog Sqwad side by side.
+- Online (`Scripts/Fusion/`): compiles against Fusion 2.1.3 in the owner's editor, and
+  F6 hosts, and all four limbs move (confirmed by the owner): the host's own on
+  W A S D, read straight off its keyboard, and limbs nobody joined for on the host's
+  offline keys. A build joined the editor with F7 on the same PC and played its limb
+  (confirmed by the owner); the client's smoothing between host states is the latest
+  fix, not yet confirmed. The status line counts host ticks, shows tick errors in
+  red, fps, each limb's player and input, and on a client, host updates per second.
+  Next: two PCs over the internet, then 3-4 players.
+  Fusion is never committed (`Assets/Photon/` is gitignored; the repo is public and
+  the SDK holds the owner's App ID). Not wired to the menu:
+  `CoatLobby.Online` is still false. F5 restart is off online.
+- Coat/head host lock: agreed, not written. (The host-only observer is done, via
+  `ExternalSimulation`, in both observers.)
 - Roles are pinned to seat index — nobody is ever dealt a different limb, so the
   per-limb cosmetic rule is inert. `CoatLoadout.Leader` is hard-coded to seat 0;
   whatever deals roles must set it.
@@ -250,10 +322,10 @@ scene wiring, drivable from a harness. Rules live outside the UI classes.
    for the coat and crew but not the body's limbs (step timers, drive targets,
    planted feet). Unverified guess.
 2. **Milestone 1:** the current heist fully playable online with 4 players, plus a
-   proper win/lose (win/lose now done). Ragdoll-over-network first — it's the
-   biggest unknown. No new rounds until online feels right. Blocked on Fusion import.
-3. Small networking prep that doesn't need Fusion: the `IsHost` guard (true offline)
-   and the coat/head lock at round start.
+   proper win/lose (win/lose now done). The code is written; next is the first
+   compile with Fusion 2 imported, then a real 2-4 player test. No new rounds until
+   online feels right.
+3. The coat/head lock at round start, and F5 restart online.
 4. Role dealing — matters once each player has their own profile online; must set
    `CoatLoadout.Leader`.
 5. Rounds, one at a time after online: parkour, horror house escape, fast food

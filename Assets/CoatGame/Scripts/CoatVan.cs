@@ -66,6 +66,9 @@ namespace Coat
                  "just a there-and-back.")]
         public CoatLoot Loot;
 
+        /// Fusion owns the simulation tick while this is true.
+        public bool ExternalSimulation;
+
         [Header("Door")]
         [Tooltip("The shutter. Slid straight up out of the way; its collider goes with " +
                  "it, which is what actually lets anybody out.")]
@@ -124,7 +127,7 @@ namespace Coat
         {
             if (Game == null || Coat == null) return;
 
-            ReadResetKey();
+            if (!ExternalSimulation) ReadResetKey();
 
             switch (Now)
             {
@@ -269,6 +272,39 @@ namespace Coat
             AtHome = 0;
             _left = false;
             Shut();
+        }
+
+        // ---- online -------------------------------------------------------------
+
+        /// Online, on a client: show the round the host is running. Nothing here
+        /// decides anything -- the host's van ticks for real and this only copies
+        /// where it got to, so the door, the clock and the banner match everywhere.
+        public void ApplyNetworkState(Phase now, float elapsed, int atHome, bool left, float door)
+        {
+            // A fresh round on the host: forget the verdict from the last one.
+            if (now != Phase.Back) LastResult = null;
+
+            Now = now;
+            Elapsed = elapsed;
+            AtHome = atHome;
+            _left = left;
+            _door = Mathf.Clamp01(door);
+            PlaceDoor();
+        }
+
+        /// Online, on a client: the host has closed the round. Settle the same run
+        /// here so this player is paid into their OWN save -- CoatSave only ever
+        /// writes the local file, so the host cannot pay anybody else. Same numbers
+        /// through the same pure math in CoatRoundResult, so the same verdict and
+        /// the same payout as the host. Once per round.
+        public void ApplyNetworkResult(bool busted, int fumbles, float peakSuspicion, float seconds)
+        {
+            if (LastResult.HasValue) return;
+
+            LastResult = CoatRoundResult.Settle(busted, fumbles, peakSuspicion, seconds);
+
+            if (LastResult.Value.Outcome == RoundOutcome.GotAway &&
+                (BestTime < 0f || seconds < BestTime)) BestTime = seconds;
         }
 
         // ---- readout ------------------------------------------------------------

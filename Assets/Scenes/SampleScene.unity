@@ -14,19 +14,19 @@ OcclusionCullingSettings:
 RenderSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 10
-  m_Fog: 0
-  m_FogColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
-  m_FogMode: 3
+  m_Fog: 1
+  m_FogColor: {r: 0.702, g: 0.7137, b: 0.8392, a: 1}
+  m_FogMode: 1
   m_FogDensity: 0.01
-  m_LinearFogStart: 0
-  m_LinearFogEnd: 300
-  m_AmbientSkyColor: {r: 0.212, g: 0.227, b: 0.259, a: 1}
-  m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
-  m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
+  m_LinearFogStart: 35
+  m_LinearFogEnd: 110
+  m_AmbientSkyColor: {r: 0.702, g: 0.7137, b: 0.8392, a: 1}
+  m_AmbientEquatorColor: {r: 0.4941, g: 0.4784, b: 0.6118, a: 1}
+  m_AmbientGroundColor: {r: 0.2431, g: 0.2471, b: 0.2118, a: 1}
   m_AmbientIntensity: 1
-  m_AmbientMode: 0
+  m_AmbientMode: 1
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 8f80beacac2b42c18a48ba2c05a3e4aa, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -3449,7 +3449,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 19a8f2e47b79cf8498ae23b5cf5de544, type: 2}
+  - {fileID: 2100000, guid: eae2816a1f4c4f1a8c2e764c8ed20946, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -3535,6 +3535,7 @@ MonoBehaviour:
   Vehicle: {fileID: 1410944840}
   Coat: {fileID: 584821540}
   Loot: {fileID: 715078550}
+  ExternalSimulation: 0
   Door: {fileID: 1291766131}
   DoorLift: 2.35
   DoorSeconds: 1.3
@@ -6644,7 +6645,7 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 1
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 0.9412, b: 0.8471, a: 1}
   m_Intensity: 2
   m_Range: 10
   m_SpotAngle: 30
@@ -11867,7 +11868,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 19a8f2e47b79cf8498ae23b5cf5de544, type: 2}
+  - {fileID: 2100000, guid: eae2816a1f4c4f1a8c2e764c8ed20946, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -13542,6 +13543,7 @@ MonoBehaviour:
   Body: {fileID: 1339642304}
   Eye: {fileID: 1514702158}
   Skin: {fileID: 1566071453}
+  ExternalSimulation: 0
   ViewDistance: 9
   ViewAngle: 110
   TurnSpeed: 110
@@ -13807,6 +13809,7 @@ MonoBehaviour:
   - {fileID: 1758392556}
   Eye: {fileID: 1331340365}
   Skin: {fileID: 445857093}
+  ExternalSimulation: 0
   ViewDistance: 9
   ViewAngle: 110
   TurnSpeed: 110
@@ -14851,7 +14854,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 19a8f2e47b79cf8498ae23b5cf5de544, type: 2}
+  - {fileID: 2100000, guid: eae2816a1f4c4f1a8c2e764c8ed20946, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -16000,6 +16003,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Coat.Classic.ClassicRagdoll
   Input: {fileID: 1339642306}
+  ExternalSimulation: 0
   CameraRef: {fileID: 330585546}
   Pelvis: {fileID: 1274555631}
   Torso: {fileID: 1513514257}
@@ -17290,6 +17294,10 @@ GameObject:
   - component: {fileID: 1410944841}
   - component: {fileID: 1410944842}
   - component: {fileID: 1410944840}
+  - component: {fileID: 1410944846}
+  - component: {fileID: 1410944845}
+  - component: {fileID: 1410944844}
+  - component: {fileID: 1410944843}
   m_Layer: 0
   m_Name: CoatGame
   m_TagString: Untagged
@@ -17424,6 +17432,125 @@ MonoBehaviour:
   Van: {fileID: 174300868}
   Loot: {fileID: 715078550}
   CameraRef: {fileID: 330585546}
+  ExternalSimulation: 0
+--- !u!114 &1410944843
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1410944838}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 43b188405c34412d8d6821b9dc41ac5f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Coat.Fusion.CoatFusionHud
+  World: {fileID: 1410944845}
+  Runner: {fileID: 1410944844}
+  Show: 1
+--- !u!114 &1410944844
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1410944838}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7081fe7d5ca544bf9b6752046be4b418, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Coat.Fusion.CoatFusionRunner
+  SessionName: 4Limbs
+  HostMode: 4
+  AutoStartHost: 0
+  AutoStartClient: 0
+--- !u!114 &1410944845
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1410944838}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 22309525e6244f7d908971f96291bbf0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Coat.Fusion.CoatFusionWorld
+  Game: {fileID: 1410944842}
+  Ragdoll: {fileID: 1339642304}
+  ClassicObserver: {fileID: 1149864051}
+  LooseObserver: {fileID: 1162652627}
+  LocalInput: {fileID: 1410944841}
+  PhysicsRoot: {fileID: 1339642305}
+  ProvideInput: 1
+  PlayerLimit: 4
+  _RolePlayers: []
+  _PlayerCount: 0
+  _RoundIndex: -1
+  _VanPhase: 0
+  _RoundTime: 0
+  _AtHome: 0
+  _HasLeftVan:
+    RawValue: 0
+  _DoorOpen: 0
+  _LootDelivered:
+    RawValue: 0
+  _RoundResult: 0
+  _ResultFumbles: 0
+  _ResultPeak: 0
+  _ResultSeconds: 0
+  _Suspicion: 0
+  _Rumbled:
+    RawValue: 0
+  _ObserverCanSee:
+    RawValue: 0
+  _ObserverTell:
+    _length: 0
+    _data:
+      Data: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  _ObserverTellStrength: 0
+  _ObserverYaw: 0
+  _LooseSuspicion: 0
+  _LooseRumbled:
+    RawValue: 0
+  _LooseCanSee:
+    RawValue: 0
+  _LooseTell:
+    _length: 0
+    _data:
+      Data: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  _LooseTellStrength: 0
+  _LooseYaw: 0
+  _BodyUp:
+    RawValue: 0
+  _LimbMask: 0
+  _KidMask: 0
+  _CoatPosition: {x: 0, y: 0, z: 0}
+  _CoatRotation: {x: 0, y: 0, z: 0, w: 0}
+  _LootPosition: {x: 0, y: 0, z: 0}
+  _LootRotation: {x: 0, y: 0, z: 0, w: 0}
+  _LootVelocity: {x: 0, y: 0, z: 0}
+  _LootAngularVelocity: {x: 0, y: 0, z: 0}
+--- !u!114 &1410944846
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1410944838}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: -1552182283, guid: e725a070cec140c4caffb81624c8c787, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Fusion.Runtime.dll::Fusion.NetworkObject
+  SortKey: 1170981101
+  SendPriority: 1
+  EnableInterpolation: 1
+  Flags: 262146
+  NestedObjects: []
+  NetworkedBehaviours:
+  - {fileID: 1410944845}
+  ForceRemoteRenderTimeframe: 0
 --- !u!1 &1432694512
 GameObject:
   m_ObjectHideFlags: 0
@@ -19458,7 +19585,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: c9a1053f25ebbc742b2550901dc79ff6, type: 2}
+  - {fileID: 2100000, guid: a76c84653f714c30b3e0575dea516647, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
