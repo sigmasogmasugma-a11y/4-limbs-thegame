@@ -14,6 +14,10 @@ namespace Coat.Classic
         public Transform Eye;
         public Renderer Skin;
 
+        /// Fusion evaluates the observer on State Authority only. Proxies receive
+        /// the replicated suspicion result instead of running their own perception.
+        public bool ExternalSimulation;
+
         [Header("Eyesight")]
         public float ViewDistance = 9f;
         [Tooltip("Full width of the vision cone, in degrees.")]
@@ -32,15 +36,6 @@ namespace Coat.Classic
         public float TellStrength { get; private set; }
         public bool Rumbled { get; private set; }
 
-        /// See CoatObserver.EverRumbled -- same signal, same reason. Rumbled
-        /// self-clears after ResetAfter so the observer can start doubting you
-        /// again; a round result needs to know it happened at all, not whether
-        /// it is STILL happening right now.
-        public bool EverRumbled { get; private set; }
-
-        /// See CoatObserver.PeakSuspicion.
-        public float PeakSuspicion { get; private set; }
-
         static readonly Color Calm = new Color(0.36f, 0.62f, 0.38f);
         static readonly Color Doubt = new Color(0.90f, 0.70f, 0.22f);
         static readonly Color Certain = new Color(0.85f, 0.22f, 0.20f);
@@ -55,7 +50,11 @@ namespace Coat.Classic
             _mpb = new MaterialPropertyBlock();
         }
 
-        void FixedUpdate() => Tick(Time.fixedDeltaTime);
+        void FixedUpdate()
+        {
+            if (ExternalSimulation) return;
+            Tick(Time.fixedDeltaTime);
+        }
 
         public void Tick(float dt)
         {
@@ -79,17 +78,23 @@ namespace Coat.Classic
                     : -FallRate;
 
                 Suspicion = Mathf.Clamp01(Suspicion + delta * dt);
-                if (Suspicion >= 1f) { Rumbled = true; EverRumbled = true; }
+                if (Suspicion >= 1f) Rumbled = true;
             }
-
-            PeakSuspicion = Mathf.Max(PeakSuspicion, Suspicion);
 
             Paint();
         }
 
-        /// See CoatObserver.ClearSuspicion -- resets the round-long history
-        /// too, not just the live state, so a restarted round cannot inherit
-        /// a bust from the attempt before it.
+        /// Apply the authoritative observer result on a client.
+        public void ApplyNetworkState(float suspicion, bool rumbled, string tell, float tellStrength, bool canSee)
+        {
+            Suspicion = Mathf.Clamp01(suspicion);
+            Rumbled = rumbled;
+            Tell = string.IsNullOrEmpty(tell) ? "-" : tell;
+            TellStrength = Mathf.Clamp01(tellStrength);
+            CanSee = canSee;
+            Paint();
+        }
+
         public void ClearSuspicion()
         {
             Suspicion = 0f;
@@ -97,8 +102,6 @@ namespace Coat.Classic
             _rumbledFor = 0f;
             Tell = "-";
             TellStrength = 0f;
-            EverRumbled = false;
-            PeakSuspicion = 0f;
         }
 
         // ---- the tells ----------------------------------------------------------
