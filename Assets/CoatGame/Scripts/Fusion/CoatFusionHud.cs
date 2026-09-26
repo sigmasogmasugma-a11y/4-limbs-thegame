@@ -32,8 +32,19 @@ namespace Coat.Fusion
                 return;
             }
 
+            if (Runner != null && Runner.Starting)
+            {
+                GUI.Label(new Rect(14f, y, 900f, 24f),
+                    "<color=#ffd24a>Connecting to Photon...</color>   this takes a few seconds, keep Play running", _style);
+                return;
+            }
+
             if (Runner != null && !Runner.Running)
-                GUI.Label(new Rect(14f, y, 900f, 24f), "F6 Host   |   F7 Join   |   Session: " + Runner.SessionName, _style);
+            {
+                string failed = Runner.LastError != null
+                    ? $"   <color=#ff5b5b>last try failed: {Runner.LastError}</color>" : "";
+                GUI.Label(new Rect(14f, y, 1400f, 24f), "F6 Host   |   F7 Join   |   Session: " + Runner.SessionName + failed, _style);
+            }
         }
 
         void Update()

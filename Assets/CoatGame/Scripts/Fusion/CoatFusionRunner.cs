@@ -19,6 +19,14 @@ namespace Coat.Fusion
         public NetworkRunner Runner { get; private set; }
         public bool Running => Runner != null && Runner.IsRunning;
 
+        /// True from the moment F6/F7 is pressed until Photon answers: a few
+        /// seconds of reaching the cloud with nothing else on screen, which is
+        /// long enough to look like nothing happened.
+        public bool Starting { get; private set; }
+
+        /// Why the last attempt failed, for the status line. Null if it didn't.
+        public string LastError { get; private set; }
+
         async void Start()
         {
             if (AutoStartHost) await StartHost();
@@ -30,8 +38,12 @@ namespace Coat.Fusion
 
         async Task<StartGameResult> StartGame(GameMode mode)
         {
-            if (Running)
+            // Once at a time: pressing F6 again while the first attempt was still
+            // connecting started a second runner alongside it.
+            if (Running || Starting)
                 return default;
+            Starting = true;
+            LastError = null;
 
             var go = new GameObject("4Limbs Network Runner");
             DontDestroyOnLoad(go);
@@ -45,18 +57,37 @@ namespace Coat.Fusion
             var sceneInfo = new NetworkSceneInfo();
             sceneInfo.AddSceneRef(sceneRef, LoadSceneMode.Single);
 
-            var result = await Runner.StartGame(new StartGameArgs
+            StartGameResult result;
+            try
             {
-                GameMode = mode,
-                SessionName = SessionName,
-                Scene = sceneInfo,
-                SceneManager = sceneManager
-            });
+                result = await Runner.StartGame(new StartGameArgs
+                {
+                    GameMode = mode,
+                    SessionName = SessionName,
+                    Scene = sceneInfo,
+                    SceneManager = sceneManager
+                });
+            }
+            finally
+            {
+                Starting = false;
+            }
 
-            if (!result.Ok)
-                Debug.LogError($"[4 Limbs] Fusion start failed: {result.ShutdownReason} {result.ErrorMessage}");
+            // Fusion can report Ok with an error attached (seen: Ok:True with
+            // "DisconnectException: ApplicationQuit" when Play stopped mid-connect),
+            // so the message counts as a failure too.
+            if (!result.Ok || !string.IsNullOrEmpty(result.ErrorMessage))
+            {
+                LastError = $"{result.ShutdownReason} {result.ErrorMessage}";
+                Debug.LogError($"[4 Limbs] Fusion start failed: {LastError}");
+                // Throw the dead runner away so F6/F7 can simply be pressed again.
+                if (go != null) Destroy(go);
+                Runner = null;
+            }
             else
+            {
                 Debug.Log($"[4 Limbs] Fusion session '{SessionName}' started as {mode}.");
+            }
 
             return result;
         }
