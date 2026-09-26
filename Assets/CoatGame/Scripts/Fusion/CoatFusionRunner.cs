@@ -96,10 +96,11 @@ namespace Coat.Fusion
                 s_starting = false;
             }
 
-            // Fusion can report Ok with an error attached (seen: Ok:True with
-            // "DisconnectException: ApplicationQuit" when Play stopped mid-connect),
-            // so the message counts as a failure too.
-            if (!result.Ok || !string.IsNullOrEmpty(result.ErrorMessage))
+            // Judge by the runner, not the message: a good start carries the
+            // message "Ok" (reading any message as failure killed a working
+            // session), and a start cut short when Play stopped mid-connect came
+            // back Ok:True with a DisconnectException but no running runner.
+            if (!result.Ok || s_runner == null || !s_runner.IsRunning)
             {
                 s_lastError = $"{result.ShutdownReason} {result.ErrorMessage}";
                 Debug.LogError($"[4 Limbs] Fusion start failed: {s_lastError}");
