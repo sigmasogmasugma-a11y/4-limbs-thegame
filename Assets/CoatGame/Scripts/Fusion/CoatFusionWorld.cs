@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Fusion;
+using Fusion.Sockets;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Coat.Classic;
